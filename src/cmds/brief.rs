@@ -104,7 +104,7 @@ pub async fn brief(hours: i64, g: &Global, o: &Opts) -> Result<()> {
             last,
             wk.map(|w| format!("{w:+.3}")).unwrap_or("-".into()),
             render::spark(&render::squeeze(hist, 24), o.ascii),
-            if *last > 0.0 { "repo above IORB: reserves getting scarce" } else { "repo below IORB: ample" }
+            if *last > 0.0 { "repo above IORB" } else { "repo below IORB" }
         );
     }
     print!("{}", board::render("liquidity", &liq, o).lines().skip(1).map(|l| format!("{l}\n")).collect::<String>());
