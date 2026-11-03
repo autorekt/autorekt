@@ -63,7 +63,7 @@ impl Polymarket {
 
     async fn history(&self, slug: &str, outcome: Option<&str>, tf: Timeframe, range: Range) -> Result<Vec<MetricPoint>> {
         let m = self.market(slug).await?.ok_or_else(|| {
-            anyhow::anyhow!("polymarket: '{slug}' is not a single market; run `autorekt prob show polymarket:{slug}` to list its markets")
+            anyhow::anyhow!("polymarket: '{slug}' is not a single market; run `autorekt show polymarket:{slug}` to list its markets")
         })?;
         let pm = to_market(&m, None);
         let o = match outcome {
@@ -135,7 +135,7 @@ impl ProbSource for Polymarket {
             return Ok(vec![to_market(&m, None)]);
         }
         let v: Vec<Value> = get_json(&format!("{GAMMA}/events?slug={}", urlencode(id))).await?;
-        let e = v.into_iter().next().ok_or_else(|| anyhow::anyhow!("polymarket: no market or event '{id}' (try `autorekt prob search`)"))?;
+        let e = v.into_iter().next().ok_or_else(|| anyhow::anyhow!("polymarket: no market or event '{id}' (try `autorekt search WORDS --kind odds`)"))?;
         let slug = e["slug"].as_str().unwrap_or(id).to_string();
         let mut ms: Vec<ProbMarket> = e["markets"].as_array().cloned().unwrap_or_default().iter().filter(|m| open(m)).map(|m| to_market(m, Some(&slug))).collect();
         if ms.is_empty() {
@@ -188,7 +188,7 @@ impl Provider for Polymarket {
         Ok(resample(&pts.into_iter().map(|p| Bar::point(p.timestamp, p.value)).collect::<Vec<_>>(), tf))
     }
     async fn fetch_ticker(&self, symbol: &str) -> Result<Ticker> {
-        let m = self.market(symbol).await?.ok_or_else(|| anyhow::anyhow!("polymarket: '{symbol}' is not a single market (use `prob show`)"))?;
+        let m = self.market(symbol).await?.ok_or_else(|| anyhow::anyhow!("polymarket: '{symbol}' is not a single market (see `autorekt show polymarket:<event>`)"))?;
         let pm = to_market(&m, None);
         let o = pm.outcomes.first().ok_or_else(|| anyhow::anyhow!("no outcomes"))?;
         Ok(Ticker {

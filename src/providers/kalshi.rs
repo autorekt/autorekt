@@ -164,7 +164,7 @@ impl Provider for Kalshi {
         Ok(resample(&pts.into_iter().map(|p| Bar::point(p.timestamp, p.value)).collect::<Vec<_>>(), tf))
     }
     async fn fetch_ticker(&self, symbol: &str) -> Result<Ticker> {
-        let m = self.market(symbol).await?.ok_or_else(|| anyhow::anyhow!("kalshi: '{symbol}' is not a market ticker (use `prob show`)"))?;
+        let m = self.market(symbol).await?.ok_or_else(|| anyhow::anyhow!("kalshi: '{symbol}' is not a market ticker (see `autorekt show kalshi:<EVENT>`)"))?;
         let pm = to_market(&m);
         let o = &pm.outcomes[0];
         Ok(Ticker {

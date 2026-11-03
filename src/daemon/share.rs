@@ -99,7 +99,7 @@ pub(super) async fn start_tunnel(st: &St, port: u16) -> Result<String> {
     if let Some(u) = st.info.lock().await.public_url.clone() {
         return Ok(u);
     }
-    let bin = cloudflared_path().ok_or_else(|| anyhow!("cloudflared not installed; run `autorekt share --install-tunnel`"))?;
+    let bin = cloudflared_path().ok_or_else(|| anyhow!("cloudflared not installed; run `autorekt daemon tunnel`"))?;
     let mut child = tokio::process::Command::new(bin)
         .args(["tunnel", "--no-autoupdate", "--url", &format!("http://127.0.0.1:{port}")])
         .stdout(std::process::Stdio::null())

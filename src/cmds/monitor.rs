@@ -1,5 +1,5 @@
-//! Python monitors: create from the template, install, list with process state, remove,
-//! and print the SDK.
+//! Python monitors (`watch NAME --python`): files in ~/.autorekt/monitors that the daemon runs
+//! and supervises. Create from the template, list with process state, remove.
 
 use super::*;
 
@@ -7,7 +7,7 @@ fn monitors_dir() -> std::path::PathBuf {
     config::home().join("monitors")
 }
 
-pub async fn monitor_ls(g: &Global) -> Result<()> {
+pub(super) async fn monitor_ls(g: &Global) -> Result<()> {
     let dir = monitors_dir();
     let files: Vec<String> = std::fs::read_dir(&dir).map(|rd| rd.flatten().map(|e| e.file_name().to_string_lossy().to_string()).collect()).unwrap_or_default();
     let status = if daemon::running().is_some() { daemon::api("status", json!({})).await.ok() } else { None };
@@ -15,7 +15,7 @@ pub async fn monitor_ls(g: &Global) -> Result<()> {
         return print_json(&json!({"files": files, "status": status.map(|s| s["monitors"].clone())}));
     }
     if files.is_empty() {
-        println!("no monitors in {} (create one: autorekt monitor new NAME)", dir.display());
+        println!("no monitors in {} (create one: autorekt watch NAME --python)", dir.display());
         return Ok(());
     }
     for f in files {
@@ -29,7 +29,7 @@ pub async fn monitor_ls(g: &Global) -> Result<()> {
     Ok(())
 }
 
-pub fn monitor_new(name: &str) -> Result<()> {
+pub(super) fn monitor_new(name: &str) -> Result<()> {
     if !name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_') {
         bail!("monitor name: letters, digits, _");
     }
@@ -49,6 +49,7 @@ pub fn monitor_new(name: &str) -> Result<()> {
 from autorekt import Monitor
 
 
+# API: see the docstring of ~/.autorekt/sdk/autorekt.py (history, eval, record, alert, schedule).
 class {cls}(Monitor):
     def on_start(self):
         # Closed 1m bars of the BTC perp; any autorekt id works.
@@ -71,21 +72,11 @@ if __name__ == "__main__":
 "#
         ),
     )?;
-    println!("created {} — edit it; the daemon (re)starts monitors automatically. Logs: autorekt monitor logs {name}", p.display());
+    println!("created {} — edit it; the daemon (re)starts monitors automatically. Logs: autorekt daemon logs {name}", p.display());
     Ok(())
 }
 
-pub fn monitor_add(file: &str) -> Result<()> {
-    let src = Path::new(file);
-    let name = src.file_name().ok_or_else(|| anyhow::anyhow!("bad path"))?;
-    std::fs::create_dir_all(monitors_dir())?;
-    let dst = monitors_dir().join(name);
-    std::fs::copy(src, &dst)?;
-    println!("installed {}", dst.display());
-    Ok(())
-}
-
-pub fn monitor_rm(name: &str) -> Result<()> {
+pub(super) fn monitor_rm(name: &str) -> Result<()> {
     for ext in ["py", ""] {
         let p = if ext.is_empty() { monitors_dir().join(name) } else { monitors_dir().join(format!("{name}.{ext}")) };
         if p.exists() {
@@ -95,14 +86,4 @@ pub fn monitor_rm(name: &str) -> Result<()> {
         }
     }
     bail!("no monitor '{name}'")
-}
-
-pub fn monitor_sdk() -> Result<()> {
-    let p = config::home().join("sdk").join("autorekt.py");
-    std::fs::create_dir_all(p.parent().unwrap())?;
-    std::fs::write(&p, daemon::SDK_PY)?;
-    println!("SDK: {}  (the daemon puts it on PYTHONPATH for monitors)\n", p.display());
-    let doc = daemon::SDK_PY.split("\"\"\"").nth(1).unwrap_or("");
-    println!("{}", doc.trim());
-    Ok(())
 }

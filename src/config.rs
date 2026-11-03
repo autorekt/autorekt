@@ -15,7 +15,7 @@ pub struct Config {
     pub base_urls: BTreeMap<String, String>,
     /// Optional HTTP(S) proxy for all requests.
     pub proxy: Option<String>,
-    /// Watchlists for `autorekt board --set NAME`.
+    /// Boards for `autorekt show NAME`.
     #[serde(default)]
     pub boards: BTreeMap<String, Vec<String>>,
     /// Port of the chart server (0 = pick a free one).

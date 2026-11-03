@@ -1,22 +1,23 @@
-//! `share`: publish an interactive chart through the daemon (and a cloudflared tunnel),
-//! and install cloudflared on request.
+//! `show ID --share`: publish an interactive chart through the daemon (and a cloudflared
+//! tunnel); `daemon tunnel` installs cloudflared.
 
 use super::*;
 use std::os::unix::fs::PermissionsExt;
 
-pub async fn share(id: Option<String>, interval: &str, limit: usize, kind: &str, overlay: Vec<String>, title: Option<String>, ttl: &str, local: bool, install: bool, g: &Global) -> Result<()> {
-    if install {
-        return install_cloudflared().await;
+/// Publish `s` as an interactive chart; prints the public (or with `local`, local) URL.
+pub async fn share(s: &view::Series, overlay: &[String], ttl: &str, local: bool, g: &Global) -> Result<()> {
+    let tf = Timeframe::parse(&s.interval)?;
+    if !expr::is_expression(&s.id) {
+        ids::parse(&s.id)?;
     }
-    let id = id.ok_or_else(|| anyhow::anyhow!("give an id or expression to chart"))?;
-    Timeframe::parse(interval)?;
-    if !expr::is_expression(&id) {
-        ids::parse(&id)?;
-    }
+    let limit = match (&s.range, s.limit) {
+        (Some(r), _) => (parse_duration(r)? / tf.secs) as usize + 2,
+        (None, n) => n.unwrap_or(200),
+    };
     let ttl = parse_duration(ttl)?;
     let v = daemon::api(
         "share",
-        json!({"id": id, "kind": kind, "tf": interval, "limit": limit, "ttl_secs": ttl, "title": title, "overlays": overlay, "tunnel": if local { Some(false) } else { None }}),
+        json!({"id": s.id, "kind": "candles", "tf": s.interval, "limit": limit, "ttl_secs": ttl, "overlays": overlay, "tunnel": if local { Some(false) } else { None }}),
     )
     .await?;
     if g.json {
@@ -26,7 +27,7 @@ pub async fn share(id: Option<String>, interval: &str, limit: usize, kind: &str,
     Ok(())
 }
 
-async fn install_cloudflared() -> Result<()> {
+pub async fn install_cloudflared() -> Result<()> {
     if let Some(p) = daemon::cloudflared_path() {
         println!("cloudflared already available at {}", p.display());
         return Ok(());

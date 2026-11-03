@@ -1,9 +1,21 @@
-//! Cross-asset analysis: `corr` (correlation matrix of returns) and `why` (locate a move,
-//! measure what else moved in the same window as z-scores, and collect dated news).
+//! `why`: explain. One id: locate a move, measure what else moved in the same window as
+//! z-scores, and collect dated news. Several ids (or none): the correlation matrix of returns.
 
 use super::*;
+use crate::cli::WhyArgs;
 
-pub async fn corr(list: Vec<String>, interval: &str, limit: usize, g: &Global, o: &Opts) -> Result<()> {
+pub async fn why(a: WhyArgs, g: &Global, o: &Opts) -> Result<()> {
+    if a.ids.len() == 1 {
+        let tf = a.interval.unwrap_or_else(|| "1h".into());
+        let range = a.range.unwrap_or_else(|| "7d".into());
+        return explain_move(&a.ids[0], a.at, &a.window, &range, &tf, g, o).await;
+    }
+    let tf = Timeframe::parse(&a.interval.unwrap_or_else(|| "1d".into()))?;
+    let secs = parse_duration(&a.range.unwrap_or_else(|| "60d".into()))?;
+    corr(a.ids, &tf.to_string(), ((secs / tf.secs) as usize).max(10), g, o).await
+}
+
+async fn corr(list: Vec<String>, interval: &str, limit: usize, g: &Global, o: &Opts) -> Result<()> {
     let list = if list.is_empty() {
         ["SPX", "NDX", "BTC", "ETH", "GOLD", "SILVER", "WTI", "COPPER", "US10Y", "DXY", "USDJPY", "VIX", "HYG"].iter().map(|s| s.to_string()).collect()
     } else {
@@ -106,7 +118,7 @@ fn news_words(label: &str, id: &ids::InstrumentId) -> String {
     }
 }
 
-pub async fn why(input: &str, at: Option<String>, window: &str, lookback: &str, interval: &str, g: &Global, o: &Opts) -> Result<()> {
+async fn explain_move(input: &str, at: Option<String>, window: &str, lookback: &str, interval: &str, g: &Global, o: &Opts) -> Result<()> {
     let id = ids::parse(input)?;
     let tf = Timeframe::parse(interval)?;
     let win = parse_duration(window)? * 1000;
@@ -201,7 +213,7 @@ pub async fn why(input: &str, at: Option<String>, window: &str, lookback: &str, 
     print!("{}", render::table(&t));
     println!("\nnews around the window (Google News: {q}):");
     if headlines.is_empty() {
-        println!("  none found — try `autorekt news --about \"...\"` with other words");
+        println!("  none found — try `autorekt search \"...\" --kind news` with other words");
     }
     print!("{}", render::series::events(&headlines, o, false));
     println!("\nread: a move shared by many assets with high |z| is macro (rates, dollar, risk appetite); a move alone in {label} is idiosyncratic — look for asset-specific news.");

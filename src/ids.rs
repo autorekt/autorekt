@@ -193,7 +193,7 @@ pub fn parse(input: &str) -> Result<InstrumentId> {
         bail!("empty instrument id");
     }
     if input.contains(char::is_whitespace) {
-        bail!("'{input}' contains spaces — it looks like an expression, not an id (expressions work in metric, board, rules and share)");
+        bail!("'{input}' contains spaces — it looks like an expression, not an id (expressions work in show, why and watch)");
     }
     let (main, metric) = match input.split_once('#') {
         Some((a, m)) => (a, Some(m.to_string())),
@@ -238,6 +238,12 @@ pub fn parse(input: &str) -> Result<InstrumentId> {
     }
     // Anything else: treat as a Yahoo ticker (stocks, ETFs, ^indices, =F futures, =X FX).
     Ok(InstrumentId { provider: "yahoo".into(), symbol: upper, metric })
+}
+
+/// True when `s` names an alias or a known crypto asset (case-insensitive).
+pub fn is_known_alias(s: &str) -> bool {
+    let u = s.to_uppercase();
+    aliases().contains_key(&u) || CRYPTO.contains(&u.as_str())
 }
 
 /// Short display label: the alias if one maps to this id, else the id itself.

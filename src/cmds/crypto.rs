@@ -46,7 +46,7 @@ pub async fn prelaunch(g: &Global) -> Result<()> {
     }
     println!("pre-launch / pre-IPO perps (prices are implied valuations per share/token; thin books, wide spreads)");
     print!("{}", render::table(&t));
-    println!("note: Binance pre-market perps are geo-restricted from some regions; use `autorekt candles <id>` for history");
+    println!("note: Binance pre-market perps are geo-restricted from some regions; use `autorekt show <id>` for history");
     Ok(())
 }
 

@@ -162,6 +162,21 @@ pub fn dedupe(mut events: Vec<Event>) -> Vec<Event> {
     events
 }
 
+/// One ForexFactory calendar file, cached on disk for an hour: the host rate-limits hard,
+/// and the CLI and the daemon share the cache.
+async fn calendar_file(url: &str) -> Result<Vec<Value>> {
+    let name = url.rsplit('/').next().unwrap_or("calendar.json");
+    let path = crate::config::home().join("cache").join(name);
+    let fresh = std::fs::metadata(&path).and_then(|m| m.modified()).map(|t| t.elapsed().map_or(false, |d| d.as_secs() < 3600)).unwrap_or(false);
+    if fresh {
+        return Ok(serde_json::from_str(&std::fs::read_to_string(&path)?)?);
+    }
+    let v: Vec<Value> = get_json(url).await?;
+    std::fs::create_dir_all(path.parent().unwrap())?;
+    std::fs::write(&path, serde_json::to_string(&v)?)?;
+    Ok(v)
+}
+
 /// Macro calendar for this week (and next week when available).
 pub async fn calendar() -> Result<Vec<Event>> {
     let mut out = Vec::new();
@@ -169,7 +184,7 @@ pub async fn calendar() -> Result<Vec<Event>> {
         ("https://nfs.faireconomy.media/ff_calendar_thisweek.json", true),
         ("https://nfs.faireconomy.media/ff_calendar_nextweek.json", false),
     ] {
-        let v: Vec<Value> = match get_json(url).await {
+        let v: Vec<Value> = match calendar_file(url).await {
             Ok(v) => v,
             Err(e) if required => return Err(e),
             Err(_) => continue,

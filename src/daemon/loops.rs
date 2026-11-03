@@ -16,7 +16,10 @@ pub(super) async fn rule_loop() {
             if rule.disabled {
                 continue;
             }
+            // Calendar rules fire inside a 10-minute window, so a 5-minute cadence is enough
+            // and keeps the rate-limited calendar host happy.
             let interval = match rule.tf().map(|t| t.secs).unwrap_or(60) {
+                _ if rule.is_calendar() => 300_000,
                 s if s <= 60 => 15_000,
                 s if s <= 900 => 30_000,
                 s if s < 86400 => 60_000,
@@ -51,6 +54,7 @@ pub(super) async fn eval_rule(rule: &rules::Rule) -> Result<()> {
     let c = store::open()?;
     let mut st = store::get_rule_state(&c, &rule.name)?;
     st.name = rule.name.clone();
+    st.error = None;
     let ev = if rule.is_calendar() {
         st.last_eval = Some(now);
         let before = crate::model::parse_duration(rule.calendar_before.as_deref().unwrap_or("15m"))? * 1000;

@@ -1,7 +1,7 @@
 //! CFTC Commitments of Traders (weekly, as of Tuesday, released Friday). Ids are CFTC contract
 //! codes: `cftc:13874A` (E-mini S&P 500), `cftc:043602` (10Y note), `cftc:088691` (gold) — or
 //! aliases COT_ES, COT_NQ, COT_ZN, COT_GOLD, COT_WTI, COT_JPY, COT_BTC... Find codes with
-//! `autorekt markets cftc <name>`.
+//! `autorekt search <name> --kind instruments`.
 //!
 //! Metrics (legacy report): `#noncommercial_net` (default), `#noncommercial_long`,
 //! `#noncommercial_short`, `#commercial_net`, `#open_interest`. Financial futures also have the
@@ -38,7 +38,7 @@ async fn history(code: &str, dataset: &str, weeks: usize) -> Result<Vec<Value>> 
     let url = format!("{base}?cftc_contract_market_code={}&$order=report_date_as_yyyy_mm_dd%20DESC&$limit={}", urlencode(&code.to_uppercase()), weeks.max(1));
     let v: Vec<Value> = get_json(&url).await?;
     if v.is_empty() {
-        bail!("cftc: no {dataset} rows for contract code '{code}' (find codes with `autorekt markets cftc <name>`)");
+        bail!("cftc: no {dataset} rows for contract code '{code}' (find codes with `autorekt search <name> --kind instruments`)");
     }
     Ok(v)
 }

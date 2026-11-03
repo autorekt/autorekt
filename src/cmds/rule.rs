@@ -3,6 +3,16 @@
 
 use super::*;
 
+pub enum RuleOp {
+    Add(rules::Rule, bool),
+    Ls,
+    Show(String),
+    Rm(String),
+    Check(String, Option<String>),
+    Test(String, String, Option<String>, Option<String>, Option<String>, Option<String>),
+    Enable(String, bool),
+}
+
 fn rule_or_adhoc(target: &str, tf: Option<String>) -> Result<rules::Rule> {
     if let Ok(r) = rules::find(target) {
         let mut r = r;
@@ -17,7 +27,7 @@ fn rule_or_adhoc(target: &str, tf: Option<String>) -> Result<rules::Rule> {
     bail!("'{target}' is neither a rule name nor a valid expression")
 }
 
-pub async fn rule(op: RuleOp, g: &Global, o: &Opts) -> Result<()> {
+pub(super) async fn rule(op: RuleOp, g: &Global, o: &Opts) -> Result<()> {
     match op {
         RuleOp::Add(rule, check) => {
             rule.validate()?;
@@ -31,7 +41,7 @@ pub async fn rule(op: RuleOp, g: &Global, o: &Opts) -> Result<()> {
             let i = daemon::ensure().await?;
             println!("daemon running (pid {}); it evaluates rules every ~{}", i.pid, rule.tf().map(|t| if t.secs < 60 { "15s".to_string() } else { "60s".into() }).unwrap_or_default());
             if rule.hook.is_none() {
-                println!("no --hook: firings are logged; use `autorekt wait` or `autorekt diff` to receive them");
+                println!("no --hook: firings are logged; use `autorekt watch --wait` or `autorekt show --changes` to receive them");
             }
         }
         RuleOp::Ls => {
@@ -42,7 +52,7 @@ pub async fn rule(op: RuleOp, g: &Global, o: &Opts) -> Result<()> {
                 return print_json(&v);
             }
             if list.is_empty() {
-                println!("no rules (add one: autorekt rule add NAME --expr '...')");
+                println!("no rules (add one: autorekt watch NAME --expr '...')");
                 return Ok(());
             }
             let mut rows = vec![vec!["name".to_string(), "state".into(), "value".into(), "last fired".into(), "last eval".into(), "rule".into()]];

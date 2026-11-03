@@ -7,30 +7,41 @@ export AUTOREKT_HOME=$(mktemp -d)
 pass=0; fail=0
 check() {  # check "<description>" <expected substring> <command...>
   local desc=$1 want=$2; shift 2
-  local out; out=$("$BIN" "$@" 2>&1)
+  local out
+  if [ "$1" = cat-file ]; then out=$(cat "$2"); else out=$("$BIN" "$@" 2>&1); fi
   if [[ "$out" == *"$want"* ]]; then pass=$((pass+1)); printf 'ok    %s\n' "$desc"
   else fail=$((fail+1)); printf 'FAIL  %s\n      wanted "%s" in: %s\n' "$desc" "$want" "$(echo "$out" | head -3)"; fi
 }
-check "resolve aliases"         "okx:BTC/USDT:USDT"   resolve BTC
-check "normalize OKX native id" "okx:BTC/USDT:USDT"   resolve okx:BTC-USDT-SWAP
-check "quote crypto"            "BTC"                 quote BTC
-check "candles okx"             "summary"             candles BTC -i 1h -n 10
-check "candles yahoo daily"     "summary"             candles SPX -i 1d -n 10
-check "hyperliquid HIP-3"       "summary"             candles hyperliquid:xyz:XYZ100 -i 1h -n 5
-check "funding metric"          "stats"               metric BTC#funding_rate -n 10
-check "fred expression"         "expression"          metric "fred:SOFR - fred:IORB" -i 1d -r 30d
-check "deribit dvol"            "DVOL"                board fear
-check "polymarket search"       "polymarket:"         prob search fed --provider polymarket -n 2
-check "kalshi event"            "kalshi:"             prob show kalshi:KXFEDDECISION-26DEC
-check "news feeds"              " "                   news -n 3
-check "calendar"                "calendar"            calendar --days 7 --min-impact 1
-check "rule backtest"           "backtest"            rule test 'pct(BTC, "1h") < -1' --tf 5m --range 3d
-check "rule add + ls"           "smoke_rule"          rule add smoke_rule --id BTC --above 1 --no-check
-check "rule check"              "condition=true"      rule check smoke_rule
-check "wait fires"              "smoke_rule"          wait --rule smoke_rule --timeout 90s
-check "events logged"           "smoke_rule"          events --since 1h
-check "diff"                    "diff for"            diff --as smoke --set crypto
-check "why"                     "what else moved"     why BTC --lookback 2d
+check "search resolves alias"   "okx:BTC/USDT:USDT"   search BTC --kind instruments -n 2
+check "search normalizes id"    "okx:BTC/USDT:USDT"   search okx:BTC-USDT-SWAP --kind instruments -n 1
+check "search odds"             "polymarket:"         search fed --kind odds -n 2
+check "search news"             "## news"             search bitcoin --kind news -n 3
+check "search sources"          "okx"                 search
+check "show chart okx"          "summary"             show BTC -i 1h -n 10
+check "show chart yahoo daily"  "summary"             show SPX -i 1d -n 10
+check "show hyperliquid HIP-3"  "summary"             show hyperliquid:xyz:XYZ100 -n 5
+check "show metric line"        "stats"               show BTC#funding_rate -n 10
+check "show expression"         "expression"          show "fred:SOFR - fred:IORB" -i 1d -r 30d
+check "show board"              "DVOL"                show fear
+check "show rows"               "ETH"                 show BTC ETH
+check "show market"             "kalshi:"             show kalshi:KXFEDDECISION-26DEC
+check "show news"               " "                   show news -n 3
+check "show calendar"           "calendar"            show calendar
+check "show funding"            "okx"                 show funding BTC
+check "show unknown view"       "not a view"          show foo
+check "watch backtest"          "backtest"            watch 'pct(BTC, "1h") < -1' --test --tf 5m -r 3d
+"$BIN" daemon start >/dev/null
+"$BIN" watch --wait --timeout 120s > "$AUTOREKT_HOME/wait.out" 2>&1 &
+waiter=$!
+sleep 2
+check "watch add"               "smoke_rule"          watch smoke_rule --expr 'BTC > 1' --no-check
+check "watch test now"          "condition=true"      watch smoke_rule --test
+wait $waiter
+check "watch wait fires"        "smoke_rule"          cat-file "$AUTOREKT_HOME/wait.out"
+check "show alerts"             "smoke_rule"          show alerts -r 1h
+check "show changes"            "diff for"            show crypto --changes --as smoke
+check "why move"                "what else moved"     why BTC -r 2d
+check "why correlations"        "correlation"         why BTC ETH -r 30d
 "$BIN" daemon stop >/dev/null 2>&1
 rm -rf "$AUTOREKT_HOME"
 echo "passed $pass, failed $fail"

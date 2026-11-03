@@ -18,16 +18,22 @@ These rules apply to every AI agent working in this repository. They override an
 - All imports go at the top of a file. Never import inside functions or conditional branches, and never wrap an import in try/except.
 - Code must not switch to a fallback implementation when the environment lacks something. A fallback hides the problem instead of solving it; fail loudly instead.
 
-## 4. Minimal code
+## 4. Simple interface
+
+- Keep the command-line interface as small and uniform as possible: few commands, each one verb whose variants are chosen by arguments and options, and every option meaning the same thing in every command.
+- Agents learn a tool by imitating how it was used earlier in their own history. Every extra command, alias, or special case is something they must discover and remember; a small, consistent interface is learned from a handful of examples.
+- Before adding a command, extend an existing one. Usage must be obvious from `--help` and error messages alone, without a separate guide.
+
+## 5. Minimal code
 
 - Keep every file as short and simple as possible so that a human can read and understand it.
 - Do not build complex engineering without explicit user approval. When a task seems to need it, stop, describe simpler alternatives, and let the user decide.
 
-## 5. No traces of history
+## 6. No traces of history
 
 - Code, documents, and every other file must read as if they had always been this way.
 - Do not write comments or text such as "previously...", "changed to...", "now uses...", "fixed...", or "updated...". Describe what is, not what was.
 
-## 6. Language
+## 7. Language
 
 - Everything in this repository must be in English only: code, comments, documents, file names, data labels, and figures. No Chinese or any other language.

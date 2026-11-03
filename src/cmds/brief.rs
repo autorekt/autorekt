@@ -76,7 +76,7 @@ pub async fn brief(hours: i64, g: &Global, o: &Opts) -> Result<()> {
             "events": local.iter().map(|(_, e, _)| e).collect::<Vec<_>>(),
         }));
     }
-    println!("autorekt brief  {} {}  — numbers first; interpret with the caveats at the end\n", o.full_time(now), o.tz_name());
+    println!("briefing  {} {}  — numbers first; interpret with the caveats at the end\n", o.full_time(now), o.tz_name());
     println!("## 1. Cross-asset");
     print!("{}", board::render("default", &main, o).lines().skip(1).map(|l| format!("{l}\n")).collect::<String>());
     // Movers: biggest absolute day moves among % rows.

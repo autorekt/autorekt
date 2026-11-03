@@ -39,7 +39,7 @@ async fn chart(symbol: &str, iv: &str, p1: i64, p2: i64) -> Result<Value> {
     let v: Value = match get_json(&url).await {
         Ok(v) => v,
         Err(e) if e.to_string().contains("HTTP 404") => {
-            bail!("yahoo: unknown ticker '{symbol}' — search with `autorekt markets yahoo {}`", symbol.trim_start_matches('^'))
+            bail!("yahoo: unknown ticker '{symbol}' — search with `autorekt search {} --kind instruments`", symbol.trim_start_matches('^'))
         }
         Err(e) => return Err(e),
     };
@@ -88,7 +88,7 @@ impl Provider for Yahoo {
         let r = chart(symbol, iv, start, end).await?;
         let ts = r["timestamp"].as_array().cloned().unwrap_or_default();
         if ts.is_empty() && r["meta"]["regularMarketPrice"].is_null() {
-            bail!("yahoo: no data for '{symbol}' — unknown ticker? search with `autorekt markets yahoo {}`", symbol.trim_start_matches('^'));
+            bail!("yahoo: no data for '{symbol}' — unknown ticker? search with `autorekt search {} --kind instruments`", symbol.trim_start_matches('^'));
         }
         let q = &r["indicators"]["quote"][0];
         let reg_time = r["meta"]["regularMarketTime"].as_i64().unwrap_or(0) * 1000;

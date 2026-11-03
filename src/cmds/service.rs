@@ -1,9 +1,24 @@
-//! Daemon lifecycle commands (run, start, stop, restart, status, install as a systemd user
-//! service) and log tailing.
+//! `daemon`: lifecycle (run, start, stop, restart, status, install as a systemd user
+//! service), logs of the daemon or a monitor, and installing cloudflared for shared charts.
 
 use super::*;
+use crate::cli::DaemonArgs;
 
-pub async fn service(cmd: &str, g: &Global) -> Result<()> {
+pub async fn daemon(a: DaemonArgs, g: &Global) -> Result<()> {
+    match a.action.as_str() {
+        "logs" => {
+            let file = match &a.name {
+                Some(m) => format!("monitor-{m}.log"),
+                None => "daemon.log".into(),
+            };
+            tail(&daemon::logs().join(file), a.lines)
+        }
+        "tunnel" => share::install_cloudflared().await,
+        other => service(other, g).await,
+    }
+}
+
+async fn service(cmd: &str, g: &Global) -> Result<()> {
     match cmd {
         "run" => daemon::run().await,
         "start" => {
@@ -65,11 +80,11 @@ pub async fn service(cmd: &str, g: &Global) -> Result<()> {
             }
             Ok(())
         }
-        _ => bail!("unknown daemon command"),
+        _ => bail!("unknown daemon action '{cmd}' (status, start, stop, restart, logs, install, run, tunnel)"),
     }
 }
 
-pub fn tail(path: &Path, n: usize) -> Result<()> {
+fn tail(path: &Path, n: usize) -> Result<()> {
     let t = std::fs::read_to_string(path).with_context(|| format!("no log at {}", path.display()))?;
     let lines: Vec<&str> = t.lines().collect();
     for l in &lines[lines.len().saturating_sub(n)..] {

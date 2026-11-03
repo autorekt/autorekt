@@ -131,7 +131,7 @@ class Monitor:
         api("record", {"series": series, "points": [{"timestamp": ts, "value": float(value)}]})
 
     def alert(self, title, body="", severity=2, symbols=None, hook=None):
-        """Emit an alert event (wakes `autorekt wait`, shows in `diff`, runs the hook if given)."""
+        """Emit an alert event (wakes `autorekt watch --wait`, shows in `autorekt show alerts`, runs the hook if given)."""
         return api("event", {"title": title, "body": body, "severity": int(severity), "kind": "alert",
                              "source": "monitor/" + self.name, "symbols": symbols or [], "hook": hook})
 

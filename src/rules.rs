@@ -159,7 +159,7 @@ pub fn load() -> Result<Vec<(Rule, PathBuf)>> {
 }
 
 pub fn find(name: &str) -> Result<Rule> {
-    load()?.into_iter().find(|(r, _)| r.name == name).map(|(r, _)| r).ok_or_else(|| anyhow!("no rule named '{name}' (see `autorekt rule ls`)"))
+    load()?.into_iter().find(|(r, _)| r.name == name).map(|(r, _)| r).ok_or_else(|| anyhow!("no rule named '{name}' (see `autorekt watch`)"))
 }
 
 pub fn save(rule: &Rule) -> Result<PathBuf> {

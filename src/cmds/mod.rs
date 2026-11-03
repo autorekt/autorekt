@@ -1,26 +1,25 @@
-//! Command implementations, one file per concern. `cli.rs` parses arguments and calls these.
+//! The five commands (show, search, why, watch, daemon) and the views and helpers behind them.
 
+mod alerts;
 mod analysis;
 mod brief;
 mod crypto;
 mod monitor;
 mod rule;
+mod search;
 mod service;
 mod share;
+mod show;
 mod view;
 mod watch;
 
-pub use analysis::{corr, why};
-pub use brief::brief;
-pub use crypto::{funding, prelaunch};
-pub use monitor::{monitor_add, monitor_ls, monitor_new, monitor_rm, monitor_sdk};
-pub use rule::rule;
-pub use service::{service, tail};
-pub use share::share;
-pub use view::{board, calendar, candles, markets, metric, news, prob_search, prob_show, prob_trending, quote, resolve, sources};
-pub use watch::{diff, events, wait};
+pub use analysis::why;
+pub use search::search;
+pub use service::daemon;
+pub use show::show;
+pub use watch::watch;
 
-use crate::cli::{Global, RuleOp};
+use crate::cli::Global;
 use crate::model::*;
 use crate::providers::{self, Range};
 use crate::render::{self, board, Opts};

@@ -1,22 +1,105 @@
-//! Command-line interface: argument definitions (clap) and dispatch to `cmds`.
-//! Help texts here are what agents read first, so they carry the id conventions.
+//! Command-line interface: four verbs for agents (show, search, why, watch) plus `daemon`.
+//! The first argument says what; options mean the same thing in every command.
 
+use crate::cmds;
 use crate::render::{self, Opts};
-use crate::{cmds, daemon};
 use anyhow::Result;
 use clap::{Args, Parser, Subcommand};
 
-const ABOUT: &str = "autorekt — market observation for agents (and the humans they report to).
-New here? Run `autorekt guide`.
+const ABOUT: &str = "autorekt — market observation for agents. Start with: autorekt show
 
-Ids are <provider>:<symbol>[#metric]. Exchanges use CCXT symbols:
-  okx:BTC/USDT:USDT (perp)  okx:BTC/USDT (spot)  hyperliquid:BTC/USDC:USDC  hyperliquid:xyz:TSLA (HIP-3)
-Others use native ids: yahoo:^VIX  yahoo:GC=F  fred:DGS10  polymarket:<slug>  kalshi:<TICKER>  alt:fng
-Aliases: BTC ETH SOL ... (default exchange perp), SPX NDX VIX MOVE DXY US10Y GOLD WTI HYG FNG ...
-Metrics: BTC#funding_rate  BTC#open_interest  BTC#long_short_ratio  BTC#taker_buy_sell_ratio  BTC#basis  BTC#liquidations
-Vol/fear: VIX VIX9D VIX3M MOVE OVX DVOL (deribit) CNNFNG FNG   Liquidity: fred:SOFR fred:IORB fred:WRESBAL HYOAS NFCI
-Expressions anywhere a series is expected: 'fred:SOFR - fred:IORB'  'ta.rsi(BTC, 14)'  'VIX - VIX3M'
-Timeframes: 1m 5m 15m 1h 4h 1d 1w 1M";
+  show    read anything: briefing, boards, charts, odds, news, calendar, alerts
+  search  find anything: ids, tickers, prediction markets, news
+  why     explain: a move (one id) or how assets relate (several ids)
+  watch   get alerted: rules, backtests, waiting, Python monitors
+  daemon  background service (starts by itself when needed)
+
+Ids are <provider>:<symbol>[#metric]:
+  exchanges use CCXT symbols: okx:BTC/USDT:USDT (perp)  okx:BTC/USDT (spot)  hyperliquid:xyz:TSLA (24/7)
+  others use native ids: yahoo:^VIX  yahoo:GC=F  fred:DGS10  polymarket:<slug>  kalshi:<TICKER>
+  aliases: BTC ETH SOL SPX NDX VIX MOVE DXY US10Y GOLD WTI HYG DVOL FNG CNNFNG COT_ES STABLES ...
+  metrics: BTC#funding_rate #open_interest #long_short_ratio #taker_buy_sell_ratio #basis #liquidations
+  expressions work wherever an id does: 'fred:SOFR - fred:IORB'  'ta.rsi(BTC, 14)'  'RSP / SPY'
+Timeframes: 1m 5m 15m 1h 4h 1d 1w.  Durations: 30m 6h 7d 90d.  Times: 2026-10-30T20:00:00Z";
+
+const SHOW_HELP: &str = "WHAT is one of:
+  (nothing)        the briefing: cross-asset board, volatility, liquidity, crypto positioning, odds, calendar, headlines
+  a board          default crypto macro global fear liquidity rates commodities positioning sectors megacaps asia
+  funding [COINS]  funding across venues, annualized          prelaunch    pre-launch and pre-IPO perps
+  odds             trending prediction markets                 news [TOPIC] headlines (markets, macro, crypto)
+  calendar [CCY]   macro releases                              alerts       this machine's rule and monitor events
+  ID               one series: text candles, or sparkline + table for single-value series
+  ID ID ...        one row per id: last, changes, trend, flags
+
+Examples:
+  autorekt show
+  autorekt show fear
+  autorekt show BTC -i 4h -n 30
+  autorekt show 'fred:SOFR - fred:IORB' -i 1d -r 90d
+  autorekt show NQ -i 15m --at 2026-10-30T20:00:00Z
+  autorekt show BTC ETH 'RSP / SPY' --changes
+  autorekt show BTC -i 15m --share";
+
+const SEARCH_HELP: &str = "Searches instruments (OKX, Hyperliquid, Yahoo, CFTC), prediction markets (Polymarket,
+Kalshi) and news. Without a query: the sources and their status (--check probes them).
+
+Examples:
+  autorekt search fed december
+  autorekt search anthropic --kind instruments
+  autorekt search binance hack --kind news -r 3d
+  autorekt search --check";
+
+const WHY_HELP: &str = "One id: the biggest move in the range (or the move --at a time), what else moved in the
+same window as z-scores, and dated news. Several ids: their correlation matrix. No ids: the
+correlation matrix of the main cross-asset set.
+
+Examples:
+  autorekt why BTC
+  autorekt why GOLD --at 2026-10-30T14:00:00Z --window 6h
+  autorekt why SPX NDX BTC GOLD US10Y -r 30d
+  autorekt why";
+
+const WATCH_HELP: &str = "Rules are expressions that fire when true; the daemon evaluates them and runs your hook.
+
+Examples:
+  autorekt watch                                              list rules and monitors
+  autorekt watch btc_dump --expr 'pct(BTC, \"1h\") < -3' --hook 'notify.sh'
+  autorekt watch btc_80k --expr 'BTC > 80000' --cooldown 6h
+  autorekt watch vix_inv --expr 'VIX - VIX3M > 1.5' --tf 15m --for 30m
+  autorekt watch hourly --every 1h --hook '...'
+  autorekt watch us_open --cron '30 13 * * 1-5' --hook '...'
+  autorekt watch macro --calendar 15m --countries USD,EUR --hook '...'
+  autorekt watch 'pct(BTC, \"1h\") < -3' --test -r 30d            backtest an expression (or a rule name)
+  autorekt watch btc_dump --test                               evaluate now
+  autorekt watch --wait --timeout 1h                           block until something fires
+  autorekt watch basis --python                                create a Python monitor
+  autorekt watch btc_dump --rm
+
+Expressions: ids are closes at --tf; close/open/high/low/volume(id, tf), funding_rate(id),
+open_interest(id), prob(id, outcome), pct(id, \"1h\"), stale(id, \"2h\"), atr(id, tf, n),
+ta.sma ema rma wma rsi stdev highest lowest sum zscore change roc crossover crossunder cross
+rising falling, abs min max sqrt log nz hour dayofweek, + - * / > < >= <= == != and or not.
+Message templates: {{value}} {{rhs}} {{name}} {{expr}} {{time}} {{labels.KEY}}.
+Hook environment: AUTOREKT_RULE AUTOREKT_MESSAGE AUTOREKT_VALUE AUTOREKT_RHS AUTOREKT_TIME
+AUTOREKT_SEVERITY AUTOREKT_EXPR AUTOREKT_CONTEXT (recent candles) AUTOREKT_CHART_URL AUTOREKT_LABEL_<KEY>.";
+
+const DAEMON_HELP: &str = "Actions: status (default) start stop restart logs [MONITOR] install (systemd user service)
+run (foreground) tunnel (download cloudflared for --share links).
+
+Files in $AUTOREKT_HOME (default ~/.autorekt): config.yaml, aliases.yaml (ALIAS: id), rules/,
+monitors/ (Python monitors), autorekt.db, logs/, daemon.json.
+
+config.yaml keys:
+  default_exchange: okx          where bare crypto aliases resolve
+  proxy: http://host:port        proxy for all requests
+  base_urls: {binance_futures: https://fapi.binance.com}
+  boards: {mine: [BTC, ETH, 'RSP / SPY', 'LABEL|expression']}
+  record: [{id: 'hyperliquid:BTC#open_interest', every: 5m}]   sample metrics with no public history
+  liquidations: [BTC-USDT, ETH-USDT]                            OKX swap families to collect
+  brief_odds: ['series:KXFEDDECISION', 'polymarket:<slug>']     odds shown by `show`
+  default_hook: 'command'        hook for monitor alerts without their own
+  hook_chart_url: true           pass AUTOREKT_CHART_URL to hooks
+  share_base_url / share_port / share_no_tunnel                 serving shared charts";
 
 #[derive(Parser)]
 #[command(name = "autorekt", version, about = ABOUT, long_about = ABOUT)]
@@ -32,7 +115,7 @@ pub struct Global {
     /// Output JSON instead of text.
     #[arg(long, global = true)]
     pub json: bool,
-    /// Output CSV (series commands).
+    /// Output CSV (single series).
     #[arg(long, global = true)]
     pub csv: bool,
     /// Time zone for display (IANA name, or UTC/ET/HK/CN/tokyo).
@@ -41,349 +124,201 @@ pub struct Global {
     /// Width of picture columns in characters.
     #[arg(long, global = true, default_value_t = 32)]
     width: usize,
-    /// Glyphs for pictures: ascii (= up, : down) or block (█ ░ and ▁▂▃ sparklines).
+    /// Glyphs for pictures: block (█ ░ ▁▂▃) or ascii (= up, : down).
     #[arg(long, global = true, default_value = "block")]
     glyphs: String,
 }
 
 #[derive(Subcommand)]
 enum Cmd {
-    /// One-shot market briefing for an agent: cross-asset board, fear, liquidity, crypto
-    /// positioning, key odds, calendar, headlines, local events. Start an analysis here.
-    Brief {
-        /// Hours of headlines/events to include.
-        #[arg(long, default_value_t = 12)]
-        hours: i64,
-    },
-    /// Overview: one line per instrument (changes, trend, flags). Sets: default crypto macro global fear liquidity rates commodities sectors megacaps asia, or a comma list of ids.
-    Board {
-        /// Board name or a comma-separated list of ids.
-        #[arg(default_value = "default")]
-        set: String,
-    },
-    /// Last price and 24h / previous-close change.
-    Quote { ids: Vec<String> },
-    /// Text candle chart (one line per bar).
-    Candles(SeriesArgs),
-    /// A metric or any series as sparkline + table (funding, OI, odds, FRED...).
-    Metric(SeriesArgs),
-    /// Prediction markets (Polymarket, Kalshi).
-    #[command(subcommand)]
-    Prob(ProbCmd),
-    /// News headlines (RSS feeds), optionally filtered or searched.
-    News {
-        /// Only items newer than this (e.g. 2h, 1d).
-        #[arg(long)]
-        since: Option<String>,
-        /// Search Google News for this query instead of the feed list.
-        #[arg(long)]
-        about: Option<String>,
-        /// Topic filter for the feed list: markets, macro, crypto.
-        #[arg(long)]
-        topic: Option<String>,
-        /// Minimum severity 0-3.
-        #[arg(long, default_value_t = 0)]
-        min_severity: u8,
-        #[arg(short = 'n', long, default_value_t = 40)]
-        limit: usize,
-        /// Show summaries.
-        #[arg(long)]
-        body: bool,
-    },
-    /// Macro calendar (ForexFactory): this week and next.
-    Calendar {
-        /// Days ahead to show (negative values show the past too).
-        #[arg(long, default_value_t = 7)]
-        days: i64,
-        /// Include this many days back.
-        #[arg(long, default_value_t = 1)]
-        back: i64,
-        /// Minimum impact: 1 low, 2 medium, 3 high.
-        #[arg(long, default_value_t = 2)]
-        min_impact: u8,
-        /// Country/currency filter, e.g. USD,JPY.
-        #[arg(long)]
-        country: Option<String>,
-    },
-    /// List markets of a provider (optionally filtered), e.g. `markets hyperliquid xyz`.
-    Markets { provider: String, filter: Option<String> },
-    /// Providers, what they offer, and whether they are reachable.
-    Sources {
-        /// Probe each provider now.
-        #[arg(long)]
-        check: bool,
-    },
-    /// Show how an id or alias resolves.
-    Resolve { ids: Vec<String> },
-    /// Print the guide for agents (start here).
-    Guide,
-    /// Rules: Pine-style conditions in Prometheus-style rules, plus timers.
-    #[command(subcommand)]
-    Rule(RuleCmd),
-    /// Block until a rule fires or a monitor alerts; prints the event(s) and exits.
-    Wait {
-        /// Only these rules (comma-separated names); default any.
-        #[arg(long)]
-        rule: Option<String>,
-        /// Give up after this long (exit code 2), e.g. 30m.
-        #[arg(long)]
-        timeout: Option<String>,
-        /// Minimum severity.
-        #[arg(long, default_value_t = 0)]
-        min_severity: u8,
-    },
-    /// Local event log: rule firings, timers, monitor alerts.
-    Events {
-        #[arg(long, default_value = "24h")]
-        since: String,
-        #[arg(short = 'n', long, default_value_t = 50)]
-        limit: usize,
-    },
-    /// What changed since this agent last looked: events, board moves, major headlines.
-    Diff {
-        /// Agent name for the cursor (or env AUTOREKT_AGENT).
-        #[arg(long = "as", env = "AUTOREKT_AGENT", default_value = "default")]
-        agent: String,
-        /// Board to compare.
-        #[arg(long, default_value = "default")]
-        set: String,
-        /// Peek without moving the cursor.
-        #[arg(long)]
-        peek: bool,
-    },
-    /// Share an interactive chart with a human: prints a URL (served by the daemon, via a tunnel).
-    Share {
-        /// Id or expression. Omit with --install-tunnel.
-        id: Option<String>,
-        #[arg(short = 'i', long, default_value = "1h")]
-        interval: String,
-        #[arg(short = 'n', long, default_value_t = 200)]
-        limit: usize,
-        /// candles or line.
-        #[arg(long, default_value = "candles")]
-        kind: String,
-        /// Extra line series drawn on their own scale.
-        #[arg(long)]
-        overlay: Vec<String>,
-        #[arg(long)]
-        title: Option<String>,
-        /// Link lifetime, e.g. 7d.
-        #[arg(long, default_value = "7d")]
-        ttl: String,
-        /// Local link only, no tunnel.
-        #[arg(long)]
-        local: bool,
-        /// Download cloudflared into ~/.autorekt/bin.
-        #[arg(long)]
-        install_tunnel: bool,
-    },
-    /// Manage the background daemon.
-    #[command(subcommand)]
-    Daemon(DaemonCmd),
-    /// Python monitors (event-driven scripts the daemon supervises).
-    #[command(subcommand)]
-    Monitor(MonitorCmd),
-    /// Pre-launch / pre-IPO perps (OKX pre-market, Hyperliquid HIP-3 dexes): price, 24h change, volume, funding.
-    Prelaunch,
-    /// Explain a move: find it (or use --at), show what else moved abnormally in the same
-    /// window, and the news from that window.
-    Why {
-        id: String,
-        /// Time of the move (ISO or Unix ms); default: the largest move in --lookback.
-        #[arg(long)]
-        at: Option<String>,
-        /// Window around the move.
-        #[arg(long, default_value = "4h")]
-        window: String,
-        /// Where to search for the largest move.
-        #[arg(long, default_value = "7d")]
-        lookback: String,
-        /// Bar size used to find and measure moves.
-        #[arg(short = 'i', long, default_value = "1h")]
-        interval: String,
-    },
-    /// Funding across venues for coins, annualized (OKX 8h, Hyperliquid 1h, Deribit 8h, Binance).
-    Funding {
-        /// Coins (default BTC ETH SOL XRP DOGE HYPE).
-        coins: Vec<String>,
-    },
-    /// Correlation matrix of returns across instruments.
-    Corr {
-        /// Ids (default: a cross-asset set).
-        ids: Vec<String>,
-        #[arg(short = 'i', long, default_value = "1d")]
-        interval: String,
-        #[arg(short = 'n', long, default_value_t = 60)]
-        limit: usize,
-    },
-}
-
-#[derive(Subcommand)]
-enum RuleCmd {
-    /// Add or replace a rule. Example: rule add btc_dump --expr 'pct(BTC, "1h") < -3' --hook 'notify.sh'
-    Add {
-        name: String,
-        #[arg(long)]
-        expr: Option<String>,
-        /// Shorthand: --above / --below on an id (with --id).
-        #[arg(long)]
-        id: Option<String>,
-        #[arg(long)]
-        above: Option<f64>,
-        #[arg(long)]
-        below: Option<f64>,
-        #[arg(long)]
-        every: Option<String>,
-        #[arg(long)]
-        schedule: Option<String>,
-        /// Fire this long before each high-impact macro release (e.g. 15m).
-        #[arg(long)]
-        calendar_before: Option<String>,
-        /// Calendar currencies, e.g. USD,EUR.
-        #[arg(long)]
-        calendar_countries: Option<String>,
-        #[arg(long)]
-        calendar_min_impact: Option<u8>,
-        #[arg(long)]
-        tf: Option<String>,
-        #[arg(long = "for")]
-        for_: Option<String>,
-        #[arg(long)]
-        cooldown: Option<String>,
-        /// update or bar_close.
-        #[arg(long)]
-        eval: Option<String>,
-        #[arg(long)]
-        message: Option<String>,
-        #[arg(long)]
-        hook: Option<String>,
-        #[arg(long)]
-        severity: Option<u8>,
-        /// key=value labels.
-        #[arg(long)]
-        label: Vec<String>,
-        #[arg(long)]
-        notify_resolved: bool,
-        /// Skip the immediate evaluation check.
-        #[arg(long)]
-        no_check: bool,
-        #[arg(long = "as", env = "AUTOREKT_AGENT")]
-        owner: Option<String>,
-    },
-    /// List rules with their state.
-    Ls,
-    /// Show one rule (YAML) and its state.
-    Show { name: String },
-    /// Remove a rule.
-    Rm { name: String },
-    /// Evaluate a rule (or an ad-hoc expression) once, now.
-    Check {
-        /// Rule name or expression.
-        target: String,
-        #[arg(long)]
-        tf: Option<String>,
-    },
-    /// Backtest: when would this rule have fired over a past range, and what happened next?
-    Test {
-        /// Rule name or expression.
-        target: String,
-        #[arg(long, default_value = "30d")]
-        range: String,
-        #[arg(long)]
-        tf: Option<String>,
-        #[arg(long = "for")]
-        for_: Option<String>,
-        #[arg(long)]
-        cooldown: Option<String>,
-        /// Instrument whose forward returns are reported (default: the rule's tradable
-        /// instrument, or SPX for macro series).
-        #[arg(long)]
-        fwd: Option<String>,
-    },
-    /// Enable / disable without deleting.
-    Enable { name: String },
-    Disable { name: String },
-}
-
-#[derive(Subcommand)]
-enum DaemonCmd {
-    /// Run in the foreground.
-    Run,
-    /// Start in the background (commands that need it also auto-start it).
-    Start,
-    Stop,
-    Restart,
-    Status,
-    /// Tail the daemon log.
-    Logs {
-        #[arg(short = 'n', long, default_value_t = 40)]
-        lines: usize,
-    },
-    /// Install a systemd user service so the daemon survives reboots.
-    Install,
-}
-
-#[derive(Subcommand)]
-enum MonitorCmd {
-    /// List monitors and their process state.
-    Ls,
-    /// Create a monitor from the template (then edit ~/.autorekt/monitors/NAME.py).
-    New { name: String },
-    /// Install a monitor script (copied into ~/.autorekt/monitors).
-    Add { file: String },
-    Rm { name: String },
-    Logs {
-        name: String,
-        #[arg(short = 'n', long, default_value_t = 40)]
-        lines: usize,
-    },
-    /// Print the Python SDK path and docs.
-    Sdk,
+    /// Read anything: briefing, boards, charts, odds, news, calendar, alerts.
+    #[command(after_help = SHOW_HELP)]
+    Show(ShowArgs),
+    /// Find anything: ids, tickers, prediction markets, news.
+    #[command(after_help = SEARCH_HELP)]
+    Search(SearchArgs),
+    /// Explain a move, or how assets relate.
+    #[command(after_help = WHY_HELP)]
+    Why(WhyArgs),
+    /// Get alerted: rules, backtests, waiting, Python monitors.
+    #[command(after_help = WATCH_HELP)]
+    Watch(WatchArgs),
+    /// Background service: status, start, stop, restart, logs, install, run, tunnel.
+    #[command(after_help = DAEMON_HELP)]
+    Daemon(DaemonArgs),
 }
 
 #[derive(Args)]
-pub struct SeriesArgs {
-    pub id: String,
-    /// Timeframe.
-    #[arg(short = 'i', long, default_value = "1h")]
-    pub interval: String,
-    /// Number of bars.
+pub struct ShowArgs {
+    /// What to show (see below).
+    pub what: Vec<String>,
+    /// Timeframe of bars.
+    #[arg(short = 'i', long)]
+    pub interval: Option<String>,
+    /// Number of bars or items.
     #[arg(short = 'n', long)]
     pub limit: Option<usize>,
-    /// Lookback instead of -n, e.g. 7d.
+    /// How far back, e.g. 12h, 7d, 90d.
     #[arg(short = 'r', long)]
     pub range: Option<String>,
-    /// End time (ISO date/time or Unix ms); default now.
+    /// Look at the past: the view ends at this time.
     #[arg(long)]
-    pub end: Option<String>,
-    /// Rows of the table (metric view).
-    #[arg(long, default_value_t = 24)]
-    pub rows: usize,
-    /// Overlay headlines on bars (candles view).
+    pub at: Option<String>,
+    /// Only what changed since this agent last looked.
+    #[arg(long)]
+    pub changes: bool,
+    /// Agent name for --changes (default: env AUTOREKT_AGENT).
+    #[arg(long = "as", env = "AUTOREKT_AGENT", default_value = "default")]
+    pub agent: String,
+    /// Minimum severity 0-3 for news, calendar and alerts.
+    #[arg(long, default_value_t = 0)]
+    pub min_severity: u8,
+    /// Overlay matching headlines on a chart.
     #[arg(long)]
     pub news: bool,
+    /// Print a public link to an interactive chart instead of text.
+    #[arg(long)]
+    pub share: bool,
+    /// With --share: extra series drawn on their own scale.
+    #[arg(long)]
+    pub overlay: Vec<String>,
+    /// With --share: link lifetime.
+    #[arg(long, default_value = "7d")]
+    pub ttl: String,
+    /// With --share: link for this machine only (no tunnel).
+    #[arg(long)]
+    pub local: bool,
 }
 
-#[derive(Subcommand)]
-enum ProbCmd {
-    /// Search markets by text.
-    Search {
-        query: Vec<String>,
-        /// polymarket, kalshi or all.
-        #[arg(long, default_value = "all")]
-        provider: String,
-        #[arg(short = 'n', long, default_value_t = 10)]
-        limit: usize,
-    },
-    /// Show a market, or all markets of an event.
-    Show { id: String },
-    /// Highest 24h-volume markets.
-    Trending {
-        #[arg(long, default_value = "polymarket")]
-        provider: String,
-        #[arg(short = 'n', long, default_value_t = 15)]
-        limit: usize,
-    },
+#[derive(Args)]
+pub struct SearchArgs {
+    /// Words to search for.
+    pub query: Vec<String>,
+    /// Restrict to instruments, odds or news.
+    #[arg(long)]
+    pub kind: Option<String>,
+    /// Results per section.
+    #[arg(short = 'n', long, default_value_t = 8)]
+    pub limit: usize,
+    /// News only from this far back.
+    #[arg(short = 'r', long)]
+    pub range: Option<String>,
+    /// Without a query: probe each source.
+    #[arg(long)]
+    pub check: bool,
+}
+
+#[derive(Args)]
+pub struct WhyArgs {
+    pub ids: Vec<String>,
+    /// Timeframe of bars (default 1h for a move, 1d for correlations).
+    #[arg(short = 'i', long)]
+    pub interval: Option<String>,
+    /// How far back to look (default 7d for a move, 60d for correlations).
+    #[arg(short = 'r', long)]
+    pub range: Option<String>,
+    /// Time of the move to explain (default: the biggest move in the range).
+    #[arg(long)]
+    pub at: Option<String>,
+    /// Window around the move.
+    #[arg(long, default_value = "4h")]
+    pub window: String,
+}
+
+#[derive(Args)]
+pub struct WatchArgs {
+    /// Rule or monitor name; with --test also an expression.
+    pub target: Option<String>,
+    /// Condition expression: the rule fires when it is true.
+    #[arg(long)]
+    pub expr: Option<String>,
+    /// Timer: fire every duration.
+    #[arg(long)]
+    pub every: Option<String>,
+    /// Timer: cron schedule (5 fields, UTC).
+    #[arg(long)]
+    pub cron: Option<String>,
+    /// Fire this long before each macro release.
+    #[arg(long)]
+    pub calendar: Option<String>,
+    /// Calendar currencies, e.g. USD,EUR.
+    #[arg(long)]
+    pub countries: Option<String>,
+    /// Timeframe for ids in the expression (default 1m).
+    #[arg(long)]
+    pub tf: Option<String>,
+    /// The condition must hold this long before firing.
+    #[arg(long = "for")]
+    pub for_: Option<String>,
+    /// Minimum time between firings while true (default 1h).
+    #[arg(long)]
+    pub cooldown: Option<String>,
+    /// Evaluate closed bars only.
+    #[arg(long)]
+    pub bar_close: bool,
+    /// Message template.
+    #[arg(long)]
+    pub message: Option<String>,
+    /// Shell command run when the rule fires.
+    #[arg(long)]
+    pub hook: Option<String>,
+    /// Severity of the rule's events, 0-3 (default 2).
+    #[arg(long)]
+    pub severity: Option<u8>,
+    /// Labels as key=value.
+    #[arg(long)]
+    pub label: Vec<String>,
+    /// Also emit an event when the condition clears.
+    #[arg(long)]
+    pub notify_resolved: bool,
+    /// Keep the rule but stop evaluating it.
+    #[arg(long)]
+    pub disable: bool,
+    /// Evaluate a disabled rule again.
+    #[arg(long)]
+    pub enable: bool,
+    /// Remove the rule or monitor.
+    #[arg(long)]
+    pub rm: bool,
+    /// Evaluate now; with -r, backtest over that range.
+    #[arg(long)]
+    pub test: bool,
+    /// Backtest range.
+    #[arg(short = 'r', long)]
+    pub range: Option<String>,
+    /// Backtest: instrument whose forward returns are reported.
+    #[arg(long)]
+    pub fwd: Option<String>,
+    /// Block until a rule fires or a monitor alerts (only TARGET if given).
+    #[arg(long)]
+    pub wait: bool,
+    /// With --wait: give up after this long (exit code 2).
+    #[arg(long)]
+    pub timeout: Option<String>,
+    /// Minimum severity: events to wait for, or calendar releases to fire on.
+    #[arg(long)]
+    pub min_severity: Option<u8>,
+    /// Create a Python monitor named TARGET from the template.
+    #[arg(long)]
+    pub python: bool,
+    /// Skip evaluating a new rule once before saving it.
+    #[arg(long)]
+    pub no_check: bool,
+    /// Owner of a new rule (default: env AUTOREKT_AGENT).
+    #[arg(long = "as", env = "AUTOREKT_AGENT")]
+    pub agent: Option<String>,
+}
+
+#[derive(Args)]
+pub struct DaemonArgs {
+    /// status, start, stop, restart, logs, install, run, tunnel.
+    #[arg(default_value = "status")]
+    pub action: String,
+    /// For logs: a monitor name.
+    pub name: Option<String>,
+    /// For logs: number of lines.
+    #[arg(short = 'n', long, default_value_t = 40)]
+    pub lines: usize,
 }
 
 fn opts(g: &Global) -> Result<Opts> {
@@ -392,99 +327,21 @@ fn opts(g: &Global) -> Result<Opts> {
 
 pub async fn run() -> i32 {
     let cli = Cli::parse();
-    match dispatch(cli).await {
+    let result = match opts(&cli.g) {
+        Ok(o) => match cli.cmd {
+            Cmd::Show(a) => cmds::show(a, &cli.g, &o).await,
+            Cmd::Search(a) => cmds::search(a, &cli.g, &o).await,
+            Cmd::Why(a) => cmds::why(a, &cli.g, &o).await,
+            Cmd::Watch(a) => cmds::watch(a, &cli.g, &o).await,
+            Cmd::Daemon(a) => cmds::daemon(a, &cli.g).await,
+        },
+        Err(e) => Err(e),
+    };
+    match result {
         Ok(()) => 0,
         Err(e) => {
             eprintln!("error: {e:#}");
             1
         }
-    }
-}
-
-async fn dispatch(cli: Cli) -> Result<()> {
-    let g = cli.g.clone();
-    let o = opts(&g)?;
-    match cli.cmd {
-        Cmd::Brief { hours } => cmds::brief(hours, &g, &o).await,
-        Cmd::Board { set } => cmds::board(&set, &g, &o).await,
-        Cmd::Quote { ids } => cmds::quote(ids, &g, &o).await,
-        Cmd::Candles(a) => cmds::candles(a, &g, &o).await,
-        Cmd::Metric(a) => cmds::metric(a, &g, &o).await,
-        Cmd::Prob(ProbCmd::Search { query, provider, limit }) => cmds::prob_search(query, provider, limit, &g).await,
-        Cmd::Prob(ProbCmd::Show { id }) => cmds::prob_show(id, &g).await,
-        Cmd::Prob(ProbCmd::Trending { provider, limit }) => cmds::prob_trending(provider, limit, &g).await,
-        Cmd::News { since, about, topic, min_severity, limit, body } => cmds::news(since, about, topic, min_severity, limit, body, &g, &o).await,
-        Cmd::Calendar { days, back, min_impact, country } => cmds::calendar(days, back, min_impact, country, &g, &o).await,
-        Cmd::Markets { provider, filter } => cmds::markets(provider, filter, &g).await,
-        Cmd::Sources { check } => cmds::sources(check).await,
-        Cmd::Resolve { ids } => cmds::resolve(ids),
-        Cmd::Guide => {
-            print!("{}", include_str!("../GUIDE.md"));
-            Ok(())
-        }
-        Cmd::Rule(rc) => cmds::rule(rc_into(rc), &g, &o).await,
-        Cmd::Wait { rule, timeout, min_severity } => cmds::wait(rule, timeout, min_severity, &g, &o).await,
-        Cmd::Events { since, limit } => cmds::events(&since, limit, &g, &o),
-        Cmd::Diff { agent, set, peek } => cmds::diff(&agent, &set, peek, &g, &o).await,
-        Cmd::Share { id, interval, limit, kind, overlay, title, ttl, local, install_tunnel } => {
-            cmds::share(id, &interval, limit, &kind, overlay, title, &ttl, local, install_tunnel, &g).await
-        }
-        Cmd::Daemon(DaemonCmd::Logs { lines }) => cmds::tail(&daemon::logs().join("daemon.log"), lines),
-        Cmd::Daemon(d) => {
-            let action = match d {
-                DaemonCmd::Run => "run",
-                DaemonCmd::Start => "start",
-                DaemonCmd::Stop => "stop",
-                DaemonCmd::Restart => "restart",
-                DaemonCmd::Status => "status",
-                DaemonCmd::Install => "install",
-                DaemonCmd::Logs { .. } => unreachable!("handled above"),
-            };
-            cmds::service(action, &g).await
-        }
-        Cmd::Monitor(MonitorCmd::Ls) => cmds::monitor_ls(&g).await,
-        Cmd::Monitor(MonitorCmd::New { name }) => cmds::monitor_new(&name),
-        Cmd::Monitor(MonitorCmd::Add { file }) => cmds::monitor_add(&file),
-        Cmd::Monitor(MonitorCmd::Rm { name }) => cmds::monitor_rm(&name),
-        Cmd::Monitor(MonitorCmd::Logs { name, lines }) => cmds::tail(&daemon::logs().join(format!("monitor-{name}.log")), lines),
-        Cmd::Monitor(MonitorCmd::Sdk) => cmds::monitor_sdk(),
-        Cmd::Why { id, at, window, lookback, interval } => cmds::why(&id, at, &window, &lookback, &interval, &g, &o).await,
-        Cmd::Funding { coins } => cmds::funding(coins, &g).await,
-        Cmd::Prelaunch => cmds::prelaunch(&g).await,
-        Cmd::Corr { ids, interval, limit } => cmds::corr(ids, &interval, limit, &g, &o).await,
-    }
-}
-
-
-pub enum RuleOp {
-    Add(crate::rules::Rule, bool),
-    Ls,
-    Show(String),
-    Rm(String),
-    Check(String, Option<String>),
-    Test(String, String, Option<String>, Option<String>, Option<String>, Option<String>),
-    Enable(String, bool),
-}
-
-fn rc_into(rc: RuleCmd) -> RuleOp {
-    match rc {
-        RuleCmd::Add { name, expr, id, above, below, every, schedule, calendar_before, calendar_countries, calendar_min_impact, tf, for_, cooldown, eval, message, hook, severity, label, notify_resolved, no_check, owner } => {
-            let expr = match (expr, id, above, below) {
-                (Some(e), _, _, _) => Some(e),
-                (None, Some(i), Some(a), None) => Some(format!("\"{i}\" > {a}")),
-                (None, Some(i), None, Some(b)) => Some(format!("\"{i}\" < {b}")),
-                (None, Some(i), Some(a), Some(b)) => Some(format!("\"{i}\" > {a} or \"{i}\" < {b}")),
-                _ => None,
-            };
-            let labels = label.iter().filter_map(|l| l.split_once('=').map(|(k, v)| (k.to_string(), v.to_string()))).collect();
-            RuleOp::Add(crate::rules::Rule { name, expr, every, schedule, calendar_before, calendar_countries: calendar_countries.map(|c| c.split(',').map(|x| x.trim().to_uppercase()).collect()).unwrap_or_default(), calendar_min_impact, tf, for_, cooldown, eval, labels, message, hook, severity, notify_resolved, disabled: false, owner }, !no_check)
-        }
-        RuleCmd::Ls => RuleOp::Ls,
-        RuleCmd::Show { name } => RuleOp::Show(name),
-        RuleCmd::Rm { name } => RuleOp::Rm(name),
-        RuleCmd::Check { target, tf } => RuleOp::Check(target, tf),
-        RuleCmd::Test { target, range, tf, for_, cooldown, fwd } => RuleOp::Test(target, range, tf, for_, cooldown, fwd),
-        RuleCmd::Enable { name } => RuleOp::Enable(name, true),
-        RuleCmd::Disable { name } => RuleOp::Enable(name, false),
     }
 }
