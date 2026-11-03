@@ -60,7 +60,7 @@ async fn corr(list: Vec<String>, interval: &str, limit: usize, g: &Global, o: &O
         for j in i + 1..n {
             let (Some(a), Some(b)) = (&rel[i][j], &rel[j][i]) else { continue };
             let (y, x, r) = if a.z.abs() >= b.z.abs() { (i, j, a) } else { (j, i, b) };
-            if (r.corr.abs() >= 0.3 && r.z.abs() >= 2.0) || (r.recent - r.corr).abs() >= 0.5 {
+            if r.corr.abs() >= MIN_CORR && r.z.abs() >= MIN_Z {
                 breaks.push((y, x, r));
             }
         }
@@ -88,7 +88,7 @@ async fn corr(list: Vec<String>, interval: &str, limit: usize, g: &Global, o: &O
     pairs.sort_by(|a, b| b.0.abs().total_cmp(&a.0.abs()));
     let top: Vec<String> = pairs.iter().take(8).map(|(c, i, j)| format!("{}~{} {:+.2}", series[*i].0, series[*j].0, c)).collect();
     println!("strongest: {}", top.join("  "));
-    println!("\nbreaks: the last {LAST} bars against the fit over the earlier ones (|corr| ≥ 0.3 and |z| ≥ 2), or a last-{RECENT} correlation 0.5 away");
+    println!("\nbreaks: the last {LAST} bars against the fit over the earlier ones, where |corr| ≥ {MIN_CORR} and |residual z| ≥ {MIN_Z}");
     if breaks.is_empty() {
         println!("  none");
         return Ok(());
@@ -105,6 +105,10 @@ async fn corr(list: Vec<String>, interval: &str, limit: usize, g: &Global, o: &O
 /// Observations in the recent correlation, and returns in the tested move.
 const RECENT: usize = 20;
 const LAST: usize = 5;
+/// A break needs a relationship worth trusting and a large miss: with dozens of pairs, looser
+/// thresholds flag some pair on most days.
+const MIN_CORR: f64 = 0.5;
+const MIN_Z: f64 = 3.0;
 
 /// How `y` relates to `x`, from aligned (x, y) changes in time order: correlation over all of
 /// them and over the last `RECENT`, and how far the sum of the last `LAST` changes of `y` is

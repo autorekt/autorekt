@@ -100,8 +100,8 @@ news around the window (Google News: bitcoin after:2026-10-28 before:2026-10-31)
 ```
 
 With several ids, `why` gives the correlation matrix of their returns and the pairs that broke
-from their usual relationship: the last five bars of one against what a fit on the other
-implies, in standard deviations.
+from a strong relationship (correlation of at least 0.5): the last five bars of one missing
+what a fit on the other implies by three standard deviations or more.
 
 **Boards** put many instruments side by side. Rates and spreads move in basis points, vol
 indices in points, everything else in percent.
