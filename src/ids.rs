@@ -97,7 +97,7 @@ pub fn default_aliases() -> BTreeMap<String, String> {
         ("RTY", "yahoo:RTY=F"),
         // Global indices
         ("DAX", "yahoo:^GDAXI"), ("FTSE", "yahoo:^FTSE"), ("STOXX50", "yahoo:^STOXX50E"), ("CAC", "yahoo:^FCHI"),
-        ("NIKKEI", "yahoo:^N225"), ("N225", "yahoo:^N225"), ("TOPIX", "yahoo:1306.T"), ("HSI", "yahoo:^HSI"), ("HSTECH", "yahoo:^HSTECH"),
+        ("NIKKEI", "yahoo:^N225"), ("N225", "yahoo:^N225"), ("TOPIX", "yahoo:1306.T"), ("HSI", "yahoo:^HSI"), ("HSTECH", "yahoo:HSTECH.HK"),
         ("SSEC", "yahoo:000001.SS"), ("CSI300", "yahoo:000300.SS"), ("KOSPI", "yahoo:^KS11"), ("NIFTY", "yahoo:^NSEI"),
         ("TAIEX", "yahoo:^TWII"), ("ASX", "yahoo:^AXJO"),
         // Volatility / fear
