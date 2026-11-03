@@ -1,0 +1,20 @@
+//! autorekt — market observation for agents. See `autorekt --help`.
+
+mod cli;
+mod cmds;
+mod config;
+mod daemon;
+mod expr;
+mod http;
+mod ids;
+mod model;
+mod providers;
+mod render;
+mod rules;
+mod store;
+
+fn main() {
+    let rt = tokio::runtime::Builder::new_multi_thread().enable_all().build().expect("tokio runtime");
+    let code = rt.block_on(cli::run());
+    std::process::exit(code);
+}
