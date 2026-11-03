@@ -11,7 +11,6 @@ use crate::structure::{self, Pivot};
 use std::collections::BTreeMap;
 
 const DAY: i64 = 86_400_000;
-const CURRENCIES: &[&str] = &["USD", "EUR", "JPY", "GBP", "AUD", "NZD", "CAD", "CHF", "CNY", "CNH", "HKD", "SGD", "KRW", "INR", "MXN", "SEK", "NOK"];
 const POSITIONING: &[(&str, &str)] = &[("funding_rate", "funding"), ("open_interest", "OI"), ("long_short_ratio", "long/short")];
 
 /// Print the context of `s`, whose detailed bars (`detail`) were just shown.
@@ -23,7 +22,11 @@ pub async fn print(s: &view::Series, detail: &[Bar], o: &Opts) -> Result<()> {
     let daily = daily.context("daily history for the context")?;
     let hourly = hourly.context("hourly bars for the context")?;
     let id = (!expr::is_expression(&s.id)).then(|| ids::parse(&s.id)).transpose()?;
-    let (positioning, events, related) = tokio::join!(positioning(id.as_ref()), events(id.as_ref().map_or(s.id.to_uppercase(), |i| i.symbol.to_uppercase())), related(&s.id, &daily));
+    // Everything is measured as of --at when it is given.
+    let at = s.at.as_deref().map(parse_time).transpose()?;
+    let now = at.unwrap_or_else(now_ms);
+    let text = id.as_ref().map_or(s.id.to_uppercase(), |i| i.symbol.to_uppercase());
+    let (positioning, events, related) = tokio::join!(positioning(id.as_ref(), at), events(text, now), related(&s.id, &daily, s.at.as_deref()));
     let mut out = String::new();
     out.push_str(&history(&daily, tf, detail, o));
     out.push_str(&swings(&daily, detail, tf, o));
@@ -33,7 +36,7 @@ pub async fn print(s: &view::Series, detail: &[Bar], o: &Opts) -> Result<()> {
     out.push_str(&positioning?);
     out.push_str(&events?);
     out.push_str(&related?);
-    out.push_str(&quality(detail, tf, &daily));
+    out.push_str(&quality(detail, tf, &daily, now));
     print!("{out}");
     Ok(())
 }
@@ -180,7 +183,7 @@ fn state(daily: &[Bar], hourly: &[Bar]) -> String {
 }
 
 /// Positioning metrics the id's source provides (perpetual futures: funding, OI, long/short).
-async fn positioning(id: Option<&ids::InstrumentId>) -> Result<String> {
+async fn positioning(id: Option<&ids::InstrumentId>, at: Option<i64>) -> Result<String> {
     let Some(id) = id.filter(|i| i.metric.is_none()) else { return Ok(String::new()) };
     let offered = providers::get(&id.provider)?.metrics();
     let wanted: Vec<(&str, &str)> = POSITIONING.iter().copied().filter(|(m, _)| offered.contains(m)).collect();
@@ -188,16 +191,28 @@ async fn positioning(id: Option<&ids::InstrumentId>) -> Result<String> {
         return Ok(String::new());
     }
     let metric_ids: Vec<ids::InstrumentId> = wanted.iter().map(|(m, _)| id.with_metric(m)).collect();
-    let quotes = futures::future::join_all(metric_ids.iter().map(providers::ticker)).await;
+    let quotes = futures::future::join_all(metric_ids.iter().map(|m| metric_value(m, at))).await;
     let parts: Vec<String> = wanted
         .iter()
         .zip(quotes)
         .map(|((_, label), q)| match q {
-            Ok(t) => format!("{label} {} ({} 24h)", number(t.last), t.change.map(|c| format!("{}{}", if c >= 0.0 { "+" } else { "" }, number(c))).unwrap_or("-".into())),
+            Ok((last, change)) => format!("{label} {} ({} 24h)", number(last), change.map(|c| format!("{}{}", if c >= 0.0 { "+" } else { "" }, number(c))).unwrap_or("-".into())),
             Err(e) => format!("{label} unavailable ({})", e.to_string().lines().next().unwrap_or("")),
         })
         .collect();
     Ok(format!("positioning  {}\n", parts.join("  ·  ")))
+}
+
+/// A metric's value and 24-hour change: live, or from its hourly history as of `at`.
+async fn metric_value(id: &ids::InstrumentId, at: Option<i64>) -> Result<(f64, Option<f64>)> {
+    let Some(at) = at else {
+        let t = providers::ticker(id).await?;
+        return Ok((t.last, t.change));
+    };
+    let bars = providers::ohlcv(id, Timeframe::H1, Range { start: Some(at - 3 * DAY), end: Some(at), limit: 72 }).await?;
+    let last = bars.last().with_context(|| format!("no {id} history before {}", chrono::DateTime::from_timestamp_millis(at).unwrap_or_default().format("%Y-%m-%d %H:%M")))?;
+    let before = bars.iter().rev().find(|b| b.timestamp <= last.timestamp - DAY);
+    Ok((last.close, before.map(|b| last.close - b.close)))
 }
 
 fn number(x: f64) -> String {
@@ -208,13 +223,18 @@ fn number(x: f64) -> String {
     }
 }
 
-/// High-impact releases in the next three days for the currencies named in `text` (a symbol
-/// or an expression), or all high-impact releases when it names none.
-async fn events(text: String) -> Result<String> {
-    let codes: Vec<&str> = CURRENCIES.iter().copied().filter(|c| text.contains(c)).collect();
-    let now = now_ms();
-    let evs: Vec<Event> = feeds::calendar()
-        .await?
+/// High-impact releases in the three days after `now` for the currencies named in `text` (a
+/// symbol or an expression), or all high-impact releases when it names none.
+async fn events(text: String, now: i64) -> Result<String> {
+    let codes: Vec<&str> = ids::CURRENCIES.iter().copied().filter(|c| text.contains(c)).collect();
+    let calendar = feeds::calendar().await?;
+    // The calendar source publishes this week and next only.
+    let first = calendar.iter().map(|e| e.timestamp).min().unwrap_or(i64::MAX);
+    if now < first - DAY {
+        let date = |t: i64| chrono::DateTime::from_timestamp_millis(t).unwrap_or_default().format("%Y-%m-%d").to_string();
+        return Ok(format!("events  no calendar for {}: the source covers {} onward\n", date(now), date(first)));
+    }
+    let evs: Vec<Event> = calendar
         .into_iter()
         .filter(|e| e.severity >= 3 && e.timestamp >= now && e.timestamp <= now + 3 * DAY)
         .filter(|e| codes.is_empty() || codes.iter().any(|c| c.eq_ignore_ascii_case(&e.source)))
@@ -231,11 +251,12 @@ fn daily_returns(bars: &[Bar]) -> BTreeMap<i64, f64> {
     bars.windows(2).filter(|w| w[0].close > 0.0).map(|w| (w[1].timestamp, (w[1].close / w[0].close).ln())).collect()
 }
 
-/// The default board's instruments most correlated with this one (60 daily returns).
-async fn related(id: &str, daily: &[Bar]) -> Result<String> {
+/// The default board's instruments most correlated with this one (60 daily returns up to the
+/// end of `daily`, which ends at `at` when given).
+async fn related(id: &str, daily: &[Bar], at: Option<&str>) -> Result<String> {
     let mine = daily_returns(&daily[daily.len().saturating_sub(61)..]);
     let others: Vec<String> = config::default_board().into_iter().filter(|o| o != id).collect();
-    let requests: Vec<view::Series> = others.iter().map(|o| view::Series { id: o.clone(), interval: "1d".into(), limit: Some(70), range: None, at: None, news: false, with: vec![], context: false }).collect();
+    let requests: Vec<view::Series> = others.iter().map(|o| view::Series { id: o.clone(), interval: "1d".into(), limit: Some(70), range: None, at: at.map(String::from), news: false, with: vec![], context: false }).collect();
     let fetched = futures::future::join_all(requests.iter().map(view::fetch)).await;
     let mut scored: Vec<(f64, &String)> = Vec::new();
     let mut unavailable = 0;
@@ -261,8 +282,7 @@ async fn related(id: &str, daily: &[Bar]) -> Result<String> {
     Ok(format!("related (60d corr with the default board{missing})  {}\n", if top.is_empty() { "-".to_string() } else { top.join(" · ") }))
 }
 
-fn quality(detail: &[Bar], tf: Timeframe, daily: &[Bar]) -> String {
-    let now = now_ms();
+fn quality(detail: &[Bar], tf: Timeframe, daily: &[Bar], now: i64) -> String {
     let mut flags = structure::quality(detail, tf, now);
     for f in structure::quality(daily, Timeframe::D1, now) {
         if !flags.contains(&f) {

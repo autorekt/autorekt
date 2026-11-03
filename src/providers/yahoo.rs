@@ -76,9 +76,14 @@ impl Provider for Yahoo {
     }
 
     async fn fetch_ohlcv(&self, symbol: &str, tf: Timeframe, range: Range) -> Result<Vec<Bar>> {
-        // Yahoo's daily FX bars carry an open equal to the close; build them from hourly bars.
-        let (iv, resample_to) = if symbol.ends_with("=X") && tf.secs >= 86400 { ("1h", Some(tf)) } else { interval(tf) };
+        // Yahoo's daily FX bars carry wrong closes (often equal to the open, even on 2015-01-15
+        // for EUR/CHF); build them from hourly bars, which Yahoo keeps for two years only.
+        let fx = symbol.ends_with("=X") && tf.secs >= 86400;
+        let (iv, resample_to) = if fx { ("1h", Some(tf)) } else { interval(tf) };
         let end = range.end_ms();
+        if fx && range.start.unwrap_or(end - tf.ms() * range.limit as i64) < now_ms() - max_span_ms(iv) {
+            bail!("yahoo: {tf} FX bars are built from hourly bars, which Yahoo keeps for the last 729 days; for older {symbol} history use FRED's daily rates (e.g. fred:DEXJPUS, yen per dollar; crosses as expressions like fred:DEXUSAL * fred:DEXJPUS)");
+        }
         // Ask for extra room: markets are closed nights/weekends, so N bars span more wall time.
         let want = range.start.unwrap_or_else(|| {
             let bars_per_day = (86400 / tf.secs.max(1)).max(1) as f64;

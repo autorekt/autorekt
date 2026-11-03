@@ -30,6 +30,9 @@ fn label(c: &Chart) -> String {
     if let Some(r) = &c.series.range {
         l.push_str(&format!(" · {r}"));
     }
+    if let Some(at) = &c.series.at {
+        l.push_str(&format!(" to {}", at.split('T').next().unwrap_or(at)));
+    }
     l
 }
 

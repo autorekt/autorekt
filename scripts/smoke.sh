@@ -19,6 +19,7 @@ check "search news"             "## news"             search bitcoin --kind news
 check "search sources"          "okx"                 search
 check "show chart okx"          "summary"             show BTC -i 1h -n 10
 check "show chart yahoo daily"  "summary"             show SPX -i 1d -n 10
+check "show fx cross"           "AUDJPY=X"            show AUDJPY -i 1d -n 5
 check "show context"            "swings ("            show GOLD -i 4h
 check "show with column"        "ta.rsi(\$,14)"        show AUDUSD -i 1d -n 5 --with 'ta.rsi($,14)'
 check "show hyperliquid HIP-3"  "summary"             show hyperliquid:xyz:XYZ100 -n 5
