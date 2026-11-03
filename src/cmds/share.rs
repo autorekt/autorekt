@@ -17,7 +17,7 @@ pub async fn share(s: &view::Series, overlay: &[String], ttl: &str, local: bool,
     let ttl = parse_duration(ttl)?;
     let v = daemon::api(
         "share",
-        json!({"id": s.id, "kind": "candles", "tf": s.interval, "limit": limit, "ttl_secs": ttl, "overlays": overlay, "tunnel": if local { Some(false) } else { None }}),
+        json!({"id": s.id, "kind": "candles", "tf": s.interval, "limit": limit, "range_secs": s.range.as_deref().map(parse_duration).transpose()?, "ttl_secs": ttl, "overlays": overlay, "tunnel": if local { Some(false) } else { None }}),
     )
     .await?;
     if g.json {

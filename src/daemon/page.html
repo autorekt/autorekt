@@ -1,0 +1,160 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{TITLE}} — autorekt</title>
+<style>
+  :root { --bg: #ffffff; --fg: #1d2330; --muted: #6b7385; --line: #e6e8ee; --grid: #eef0f4; --up: #1a9e6f; --down: #d64545; --accent: #3366cc; --code: #f4f5f8; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #11141a; --fg: #e6e9ef; --muted: #8a93a6; --line: #262b35; --grid: #1f242d; --up: #2bbd85; --down: #f05a5a; --accent: #6ea0ff; --code: #1a1f27; }
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--bg); color: var(--fg); font: 16px/1.6 system-ui, -apple-system, Segoe UI, sans-serif; }
+  main { max-width: 900px; margin: 0 auto; padding: 24px 16px 48px; }
+  h1, h2, h3 { line-height: 1.25; margin: 1.6em 0 0.5em; }
+  h1 { font-size: 1.8em; margin-top: 0.4em; }
+  a { color: var(--accent); }
+  article > table { border-collapse: collapse; width: 100%; display: block; overflow-x: auto; margin: 1em 0; font-size: 0.92em; }
+  article > table th, article > table td { border: 1px solid var(--line); padding: 6px 10px; text-align: left; vertical-align: top; }
+  code { background: var(--code); padding: 0.1em 0.35em; border-radius: 4px; font-size: 0.9em; }
+  pre { background: var(--code); padding: 12px; border-radius: 8px; overflow-x: auto; }
+  pre code { padding: 0; }
+  blockquote { margin: 1em 0; padding: 0 1em; border-left: 3px solid var(--line); color: var(--muted); }
+  .chart-block { border: 1px solid var(--line); border-radius: 10px; margin: 1.4em 0; overflow: hidden; }
+  .tabs { display: flex; flex-wrap: wrap; gap: 4px; padding: 8px 8px 0; }
+  .tabs button { font: inherit; font-size: 0.85em; border: 1px solid var(--line); background: transparent; color: var(--muted); border-radius: 6px; padding: 4px 10px; cursor: pointer; }
+  .tabs button.on { color: var(--fg); border-color: var(--accent); }
+  .head { display: flex; flex-wrap: wrap; gap: 4px 14px; align-items: baseline; padding: 8px 12px 0; font-size: 0.9em; }
+  .head .name { font-weight: 600; }
+  .head .last { font-variant-numeric: tabular-nums; font-weight: 600; }
+  .head .up { color: var(--up); } .head .down { color: var(--down); }
+  .head .meta { color: var(--muted); font-size: 0.85em; }
+  .plot { height: 340px; }
+  .err { color: var(--down); padding: 12px; font-size: 0.9em; }
+  body.single main { max-width: none; padding: 0; }
+  body.single .chart-block { border: 0; border-radius: 0; margin: 0; }
+  body.single .plot { height: calc(100vh - 70px); }
+  footer { color: var(--muted); font-size: 0.8em; text-align: center; padding: 0 16px 24px; }
+</style>
+</head>
+<body class="{{CLASS}}">
+<main>
+{{BODY}}
+</main>
+<footer>autorekt — not financial advice; the name is a warning. Charts are live and update every 15s.</footer>
+<script src="https://unpkg.com/lightweight-charts@4.2.0/dist/lightweight-charts.standalone.production.js"></script>
+<script>
+(function () {
+  const css = (n) => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+  const t = (ms) => Math.floor(ms / 1000);
+  const palette = ['#e39b2d', '#9b59b6', '#16a085', '#c0392b'];
+  function fmt(x) {
+    if (x === null || x === undefined || !isFinite(x)) return '-';
+    const a = Math.abs(x); const d = a >= 1e4 ? 0 : a >= 1e3 ? 1 : a >= 10 ? 2 : a >= 1 ? 4 : 6;
+    return x.toFixed(d);
+  }
+
+  function block(el) {
+    const charts = JSON.parse(el.dataset.charts);
+    let current = 0, visible = false, chart = null, series = [], first = true;
+    const tabs = document.createElement('div'); tabs.className = 'tabs';
+    const head = document.createElement('div'); head.className = 'head';
+    const plot = document.createElement('div'); plot.className = 'plot';
+    if (charts.length > 1) {
+      charts.forEach((c, i) => {
+        const b = document.createElement('button'); b.textContent = c.label;
+        b.onclick = () => { current = i; first = true; [...tabs.children].forEach((x, j) => x.classList.toggle('on', j === i)); load(); };
+        tabs.appendChild(b);
+      });
+      tabs.children[0].classList.add('on');
+      el.appendChild(tabs);
+    }
+    el.appendChild(head); el.appendChild(plot);
+
+    function ensureChart() {
+      if (chart) return;
+      chart = LightweightCharts.createChart(plot, {
+        autoSize: true,
+        layout: { background: { color: css('--bg') }, textColor: css('--fg') },
+        grid: { vertLines: { color: css('--grid') }, horzLines: { color: css('--grid') } },
+        timeScale: { timeVisible: true, secondsVisible: false },
+        rightPriceScale: { borderVisible: false },
+        crosshair: { mode: 0 },
+      });
+    }
+
+    function draw(d) {
+      ensureChart();
+      series.forEach(s => chart.removeSeries(s)); series = [];
+      const bars = d.bars || [];
+      // Enough decimals for the series' magnitude (FX near 1, rates near 0, prices in thousands).
+      const mag = Math.max(...bars.map(b => Math.abs(b.close)).filter(isFinite), 0);
+      const p = mag >= 1000 ? 1 : mag >= 10 ? 2 : mag >= 1 ? 4 : 5;
+      const priceFormat = { type: 'price', precision: p, minMove: Math.pow(10, -p) };
+      let main;
+      if (d.kind === 'candles') {
+        main = chart.addCandlestickSeries({ upColor: css('--up'), downColor: css('--down'), wickUpColor: css('--up'), wickDownColor: css('--down'), borderVisible: false, priceFormat });
+        main.setData(bars.map(b => ({ time: t(b.timestamp), open: b.open, high: b.high, low: b.low, close: b.close })));
+        if (bars.some(b => b.volume > 0)) {
+          const vol = chart.addHistogramSeries({ priceFormat: { type: 'volume' }, priceScaleId: 'vol' });
+          chart.priceScale('vol').applyOptions({ scaleMargins: { top: 0.82, bottom: 0 } });
+          vol.setData(bars.map(b => ({ time: t(b.timestamp), value: b.volume, color: b.close >= b.open ? css('--up') + '55' : css('--down') + '55' })));
+          series.push(vol);
+        }
+      } else {
+        main = chart.addLineSeries({ color: css('--accent'), lineWidth: 2, priceFormat });
+        main.setData(bars.map(b => ({ time: t(b.timestamp), value: b.close })));
+      }
+      series.push(main);
+      (d.overlays || []).forEach((o, i) => {
+        const mx = Math.max(...o.bars.map(b => Math.abs(b.close)).filter(isFinite), 0);
+        const prec = mx >= 100 ? 2 : mx >= 1 ? 4 : 6;
+        const s = chart.addLineSeries({ color: palette[i % palette.length], lineWidth: 1, priceScaleId: 'ov' + i, title: o.id, priceFormat: { type: 'price', precision: prec, minMove: Math.pow(10, -prec) } });
+        chart.priceScale('ov' + i).applyOptions({ scaleMargins: { top: 0.7, bottom: 0.12 } });
+        s.setData(o.bars.map(b => ({ time: t(b.timestamp), value: b.close })));
+        series.push(s);
+      });
+      const marks = (d.markers || []).map(m => ({ time: t(m.t - (m.t % 60000)), position: 'aboveBar', color: '#e39b2d', shape: 'arrowDown', text: (m.text || '').slice(0, 40) }))
+        .filter(m => bars.length && m.time >= t(bars[0].timestamp)).sort((a, b) => a.time - b.time);
+      try { main.setMarkers(marks); } catch (e) {}
+      if (bars.length) {
+        const last = bars[bars.length - 1], base = bars[0].open || bars[0].close;
+        const absolute = bars.some(b => b.low <= 0);
+        const c = absolute ? last.close - base : (last.close / base - 1) * 100;
+        const cls = c >= 0 ? 'up' : 'down';
+        head.innerHTML = '';
+        const add = (cl, text) => { const s = document.createElement('span'); s.className = cl; s.textContent = text; head.appendChild(s); };
+        add('name', charts[current].label);
+        add('last', fmt(last.close));
+        add(cls, (c >= 0 ? '+' : '') + (absolute ? fmt(c) : c.toFixed(2) + '%') + ' over view');
+        add('meta', d.tf + ' · ' + new Date(d.updated).toLocaleTimeString());
+      }
+      if (first) { chart.timeScale().fitContent(); first = false; }
+    }
+
+    async function load() {
+      try {
+        const r = await fetch('/c/' + charts[current].token + '/data', { cache: 'no-store' });
+        const d = await r.json();
+        if (!r.ok) throw new Error(d.error || r.status);
+        draw(d);
+      } catch (e) {
+        head.innerHTML = '';
+        const s = document.createElement('span'); s.className = 'err'; s.textContent = charts[current].label + ': could not load data (' + e.message + ')';
+        head.appendChild(s);
+      }
+    }
+
+    new IntersectionObserver((es) => {
+      const was = visible; visible = es.some(e => e.isIntersecting);
+      if (visible && !was) load();
+    }, { rootMargin: '200px' }).observe(el);
+    setInterval(() => { if (visible && !document.hidden) load(); }, 15000);
+  }
+
+  document.querySelectorAll('.chart-block').forEach(block);
+})();
+</script>
+</body>
+</html>

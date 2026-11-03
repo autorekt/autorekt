@@ -8,22 +8,8 @@
 //! Glyphs: `=` up body, `:` down body, `-` wick, `|` open == close.
 
 use super::*;
-use crate::model::{Bar, Event};
-
-pub fn atr(bars: &[Bar], n: usize) -> Option<f64> {
-    if bars.len() < n + 1 {
-        return None;
-    }
-    let trs: Vec<f64> = bars
-        .windows(2)
-        .map(|w| {
-            let (p, b) = (&w[0], &w[1]);
-            (b.high - b.low).max((b.high - p.close).abs()).max((b.low - p.close).abs())
-        })
-        .collect();
-    let tail = &trs[trs.len() - n..];
-    Some(mean(tail))
-}
+use crate::model::{Bar, Event, Timeframe};
+use crate::structure::atr;
 
 fn bar_picture(b: &Bar, lo: f64, hi: f64, w: usize, ascii: bool) -> String {
     let col = |p: f64| -> usize {
@@ -62,6 +48,8 @@ pub struct CandleView<'a> {
     pub step_ms: i64,
     pub notes: Vec<String>,
     pub events: &'a [Event],
+    /// Extra numeric columns (e.g. indicators), one value per bar.
+    pub extra: &'a [Column],
 }
 
 pub fn render(v: &CandleView, o: &Opts) -> String {
@@ -97,6 +85,7 @@ pub fn render(v: &CandleView, o: &Opts) -> String {
     if show_vol {
         head.push("vol".into());
     }
+    head.extend(v.extra.iter().map(|c| c.label.clone()));
     let scale_hdr = {
         let l = fmt_price(lo, dec);
         let h = fmt_price(hi, dec);
@@ -129,6 +118,7 @@ pub fn render(v: &CandleView, o: &Opts) -> String {
         if show_vol {
             r.push(fmt_qty(b.volume));
         }
+        r.extend(v.extra.iter().map(|c| c.cell(i)));
         let mut pic = format!("|{}|", bar_picture(b, lo, hi, w, o.ascii));
         if let Some(es) = ev_by_bar.get(i) {
             if !es.is_empty() {
@@ -198,4 +188,33 @@ pub fn render(v: &CandleView, o: &Opts) -> String {
         out.push_str("(* = bar still forming)\n");
     }
     out
+}
+
+/// Bars of several coarser timeframes in one table on a shared scale, oldest section first:
+/// the compressed history above a detailed chart.
+pub fn compact(sections: &[(Timeframe, Vec<Bar>)], o: &Opts) -> String {
+    let all: Vec<&Bar> = sections.iter().flat_map(|(_, b)| b.iter()).collect();
+    if all.is_empty() {
+        return String::new();
+    }
+    let lo = all.iter().map(|b| b.low).fold(f64::INFINITY, f64::min);
+    let hi = all.iter().map(|b| b.high).fold(f64::NEG_INFINITY, f64::max);
+    let dec = decimals_for(hi.max(lo.abs()));
+    let w = (o.width * 2 / 3).max(10);
+    let mut rows = vec![vec!["tf".to_string(), "from".into(), "open".into(), "high".into(), "low".into(), "close".into(), "chg%".into(), format!("|{}..{}|", fmt_price(lo, dec), fmt_price(hi, dec))]];
+    for (tf, bars) in sections {
+        for b in bars {
+            rows.push(vec![
+                tf.to_string(),
+                o.dt(b.timestamp).format(if tf.ms() >= Timeframe::MONTH * 1000 { "%Y-%m" } else { "%Y-%m-%d" }).to_string(),
+                fmt_price(b.open, dec),
+                fmt_price(b.high, dec),
+                fmt_price(b.low, dec),
+                fmt_price(b.close, dec),
+                pct(b.close, b.open).map(|c| format!("{c:+.2}")).unwrap_or("-".into()),
+                format!("|{}|", bar_picture(b, lo, hi, w, o.ascii)),
+            ]);
+        }
+    }
+    table(&rows)
 }

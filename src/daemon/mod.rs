@@ -25,11 +25,14 @@ use std::os::unix::process::CommandExt;
 
 mod api;
 mod loops;
+mod report;
 mod share;
 
 use api::*;
 use loops::*;
+use report::*;
 use share::*;
+pub use report::{chart_blocks, ChartReq};
 pub use share::cloudflared_path;
 
 pub const SDK_PY: &str = include_str!("../../sdk/autorekt.py");
@@ -134,6 +137,7 @@ pub async fn api(path: &str, body: Value) -> Result<Value> {
 struct Shared {
     info: Mutex<Info>,
     shares: Mutex<HashMap<String, ShareSpec>>,
+    reports: Mutex<HashMap<String, Report>>,
     cache: Mutex<HashMap<String, (i64, Value)>>,
     monitors: Mutex<HashMap<String, MonitorState>>,
     tunnel: Mutex<Option<tokio::process::Child>>,
@@ -180,6 +184,7 @@ pub async fn run() -> Result<()> {
     let st: St = Arc::new(Shared {
         info: Mutex::new(info.clone()),
         shares: Mutex::new(shares),
+        reports: Mutex::new(HashMap::new()),
         cache: Mutex::new(HashMap::new()),
         monitors: Mutex::new(HashMap::new()),
         tunnel: Mutex::new(None),
@@ -194,6 +199,8 @@ pub async fn run() -> Result<()> {
         .route("/api/record", post(api_record))
         .route("/api/event", post(api_event))
         .route("/api/share", post(api_share))
+        .route("/api/report", post(api_report))
+        .route("/r/:token", get(report_page))
         .route("/c/:token", get(chart_page))
         .route("/c/:token/data", get(chart_data))
         .with_state(st.clone());

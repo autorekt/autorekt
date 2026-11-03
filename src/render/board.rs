@@ -180,6 +180,9 @@ pub async fn row(input: &str) -> BoardRow {
             r.flags.push(format!("last bar {}h old", (now_ms_() - lt) / 3_600_000));
         }
     }
+    if let Some(d) = if daily { Some(&bars) } else { dbars.as_ref().ok() } {
+        r.flags.extend(crate::structure::quality(d, Timeframe::D1, now_ms_()));
+    }
     if id.provider == "alt" {
         let l = crate::providers::alt::fng_label(r.last).to_string();
         if !r.flags.contains(&l) {

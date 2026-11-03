@@ -76,7 +76,8 @@ impl Provider for Yahoo {
     }
 
     async fn fetch_ohlcv(&self, symbol: &str, tf: Timeframe, range: Range) -> Result<Vec<Bar>> {
-        let (iv, resample_to) = interval(tf);
+        // Yahoo's daily FX bars carry an open equal to the close; build them from hourly bars.
+        let (iv, resample_to) = if symbol.ends_with("=X") && tf.secs >= 86400 { ("1h", Some(tf)) } else { interval(tf) };
         let end = range.end_ms();
         // Ask for extra room: markets are closed nights/weekends, so N bars span more wall time.
         let want = range.start.unwrap_or_else(|| {

@@ -35,6 +35,9 @@ impl InstrumentId {
     pub fn base(&self) -> InstrumentId {
         InstrumentId { metric: None, ..self.clone() }
     }
+    pub fn with_metric(&self, m: &str) -> InstrumentId {
+        InstrumentId { metric: Some(m.to_string()), ..self.clone() }
+    }
 }
 
 /// Parsed CCXT unified symbol.

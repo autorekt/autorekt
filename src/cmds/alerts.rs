@@ -17,6 +17,7 @@ pub async fn wait(rule: Option<String>, timeout: Option<String>, min_sev: u8, g:
     }
     let deadline = timeout.as_deref().map(parse_duration).transpose()?.map(|s| now_ms() + s * 1000);
     let mut after = store::max_event_id(&store::open()?)?;
+    let mut down_since: Option<i64> = None;
     eprintln!("waiting for events (daemon pid {}){}...", info.pid, deadline.map(|_| " with timeout".to_string()).unwrap_or_default());
     loop {
         let c = store::open()?;
@@ -45,8 +46,16 @@ pub async fn wait(rule: Option<String>, timeout: Option<String>, min_sev: u8, g:
             eprintln!("timeout: nothing fired");
             std::process::exit(2);
         }
-        if daemon::running().is_none() {
-            bail!("daemon stopped while waiting");
+        // A restart leaves the daemon down for a few seconds; only a daemon that stays down
+        // ends the wait.
+        match daemon::running() {
+            Some(_) => down_since = None,
+            None => {
+                let since = *down_since.get_or_insert(now_ms());
+                if now_ms() - since > 60_000 {
+                    bail!("daemon stopped while waiting (down for over a minute)");
+                }
+            }
         }
         tokio::time::sleep(std::time::Duration::from_secs(2)).await;
     }

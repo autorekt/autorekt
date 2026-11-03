@@ -19,6 +19,8 @@ check "search news"             "## news"             search bitcoin --kind news
 check "search sources"          "okx"                 search
 check "show chart okx"          "summary"             show BTC -i 1h -n 10
 check "show chart yahoo daily"  "summary"             show SPX -i 1d -n 10
+check "show context"            "swings ("            show GOLD -i 4h
+check "show with column"        "ta.rsi(\$,14)"        show AUDUSD -i 1d -n 5 --with 'ta.rsi($,14)'
 check "show hyperliquid HIP-3"  "summary"             show hyperliquid:xyz:XYZ100 -n 5
 check "show metric line"        "stats"               show BTC#funding_rate -n 10
 check "show expression"         "expression"          show "fred:SOFR - fred:IORB" -i 1d -r 30d
@@ -40,8 +42,12 @@ wait $waiter
 check "watch wait fires"        "smoke_rule"          cat-file "$AUTOREKT_HOME/wait.out"
 check "show alerts"             "smoke_rule"          show alerts -r 1h
 check "show changes"            "diff for"            show crypto --changes --as smoke
+printf '# Smoke report\n\nText.\n\n```chart\nBTC -i 1h -r 2d\nRSP / SPY -i 1d -r 30d\n```\n' > "$AUTOREKT_HOME/r.md"
+check "report preview"          "[chart] RSP / SPY"   show "$AUTOREKT_HOME/r.md"
+check "report publish"          "/r/"                 show "$AUTOREKT_HOME/r.md" --share --local
 check "why move"                "what else moved"     why BTC -r 2d
 check "why correlations"        "correlation"         why BTC ETH -r 30d
+check "why breaks"              "breaks:"             why BTC ETH GOLD -r 60d
 "$BIN" daemon stop >/dev/null 2>&1
 rm -rf "$AUTOREKT_HOME"
 echo "passed $pass, failed $fail"

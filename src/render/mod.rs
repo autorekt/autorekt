@@ -175,6 +175,15 @@ pub fn stdev(v: &[f64]) -> f64 {
     (v.iter().map(|x| (x - m).powi(2)).sum::<f64>() / (v.len() - 1) as f64).sqrt()
 }
 
+/// Pearson correlation of two equally long series.
+pub fn correlation(xs: &[f64], ys: &[f64]) -> f64 {
+    let (mx, my) = (mean(xs), mean(ys));
+    let cov: f64 = xs.iter().zip(ys).map(|(x, y)| (x - mx) * (y - my)).sum();
+    let vx: f64 = xs.iter().map(|x| (x - mx).powi(2)).sum();
+    let vy: f64 = ys.iter().map(|y| (y - my).powi(2)).sum();
+    cov / (vx * vy).sqrt()
+}
+
 /// z-score of the last value against the preceding ones.
 pub fn zscore_last(v: &[f64]) -> Option<f64> {
     if v.len() < 8 {
@@ -238,6 +247,21 @@ pub fn table(rows: &[Vec<String>]) -> String {
         out.push('\n');
     }
     out
+}
+
+/// A named column of values aligned with the bars of a view (NaN = no value).
+pub struct Column {
+    pub label: String,
+    pub values: Vec<f64>,
+}
+
+impl Column {
+    pub fn cell(&self, i: usize) -> String {
+        match self.values.get(i) {
+            Some(v) if v.is_finite() => fmt_auto(*v),
+            _ => "-".into(),
+        }
+    }
 }
 
 /// Compact number for prose (messages): up to 6 significant digits, no trailing zeros.

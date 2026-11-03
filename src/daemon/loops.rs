@@ -85,12 +85,9 @@ pub(super) async fn eval_rule(rule: &rules::Rule) -> Result<()> {
         }
         hit
     } else if rule.is_timer() {
-        st.last_eval = Some(now);
-        if rules::timer_due(rule, &st, now)? {
-            st.last_fired = Some(now);
-            st.state = "firing".into();
+        if rules::timer_tick(rule, &mut st, now)? {
             let msg = rules::render_message(rule, None, None, now);
-            Some((Event { timestamp: now, kind: "timer".into(), source: format!("rule/{}", rule.name), title: msg, body: String::new(), url: None, severity: rule.severity().min(1), symbols: vec![] }, None, None))
+            Some((Event { timestamp: now, kind: "timer".into(), source: format!("rule/{}", rule.name), title: msg, body: String::new(), url: None, severity: rule.severity.unwrap_or(1).min(3), symbols: vec![] }, None, None))
         } else {
             None
         }
@@ -134,7 +131,7 @@ pub(super) async fn context_text(rule: &rules::Rule) -> String {
     let view_tf = if tf.secs < 900 { Timeframe { secs: 900 } } else { tf };
     let Ok(bars) = providers::ohlcv(&p.id, view_tf, Range::last(12)).await else { return String::new() };
     let o = crate::render::Opts { tz: chrono_tz::UTC, width: 20, ascii: true };
-    crate::render::candles::render(&crate::render::candles::CandleView { title: p.id.to_string(), tf_label: view_tf.to_string(), bars: &bars, step_ms: view_tf.ms(), notes: vec![], events: &[] }, &o)
+    crate::render::candles::render(&crate::render::candles::CandleView { title: p.id.to_string(), tf_label: view_tf.to_string(), bars: &bars, step_ms: view_tf.ms(), notes: vec![], events: &[], extra: &[] }, &o)
 }
 
 pub(super) async fn run_hook(cmd: &str, rule: &rules::Rule, e: &Event, value: Option<f64>, rhs: Option<f64>) {

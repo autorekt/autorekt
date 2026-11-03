@@ -399,6 +399,17 @@ pub fn timer_due(rule: &Rule, st: &RuleState, now: i64) -> Result<bool> {
     Ok(false)
 }
 
+/// One evaluation of a timer rule at `now`: decides whether it is due, then advances its state.
+pub fn timer_tick(rule: &Rule, st: &mut RuleState, now: i64) -> Result<bool> {
+    let due = timer_due(rule, st, now)?;
+    st.last_eval = Some(now);
+    if due {
+        st.last_fired = Some(now);
+        st.state = "firing".into();
+    }
+    Ok(due)
+}
+
 // ---------------------------------------------------------------- backtest
 
 #[derive(Debug, Clone, Serialize)]
@@ -585,6 +596,23 @@ mod tests {
         assert!(every15.matches(mon - 30 * 60_000 + 15 * 60_000));
         assert!(Cron::parse("61 * * * *").map(|c| !c.matches(mon)).unwrap_or(true));
         assert!(Cron::parse("* * *").is_err());
+    }
+
+    #[test]
+    fn cron_timer_fires_once_when_its_minute_passes() {
+        let r = Rule { name: "c".into(), schedule: Some("40 3 * * *".into()), ..Default::default() };
+        let at = |h: u32, m: u32, s: u32| chrono::NaiveDate::from_ymd_opt(2026, 11, 3).unwrap().and_hms_opt(h, m, s).unwrap().and_utc().timestamp_millis();
+        let mut st = st();
+        // Ticked every 15s, as the daemon does.
+        let mut fired = vec![];
+        let mut t = at(3, 39, 0);
+        while t <= at(3, 42, 0) {
+            if timer_tick(&r, &mut st, t).unwrap() {
+                fired.push(t);
+            }
+            t += 15_000;
+        }
+        assert_eq!(fired, vec![at(3, 40, 0)]);
     }
 
     #[test]
