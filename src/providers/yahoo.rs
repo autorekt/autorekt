@@ -3,9 +3,25 @@
 
 use super::*;
 use crate::http::{get_json, num, urlencode};
+use anyhow::{anyhow, Context};
+use chrono::{TimeZone, Timelike, Utc};
 use serde_json::Value;
 
 pub struct Yahoo;
+
+/// The trading date of a daily bar as UTC midnight. Yahoo stamps daily bars with a time on
+/// their trading date in the exchange's zone (midnight, or the cash open such as 09:30 New
+/// York); futures that stamp the evening session open trade on the next date.
+fn trading_date(ms: i64, tz: chrono_tz::Tz) -> i64 {
+    let local = Utc.timestamp_millis_opt(ms).single().unwrap_or_default().with_timezone(&tz);
+    let date = if local.hour() >= 18 { local.date_naive() + chrono::Days::new(1) } else { local.date_naive() };
+    date.and_hms_opt(0, 0, 0).unwrap_or_default().and_utc().timestamp_millis()
+}
+
+fn exchange_tz(meta: &Value, symbol: &str) -> Result<chrono_tz::Tz> {
+    let name = meta["exchangeTimezoneName"].as_str().with_context(|| format!("yahoo: no exchange time zone for {symbol}"))?;
+    name.parse().map_err(|e| anyhow!("yahoo: time zone {name}: {e}"))
+}
 
 fn base() -> String {
     crate::config::base_url("yahoo", "https://query2.finance.yahoo.com")
@@ -115,13 +131,10 @@ impl Provider for Yahoo {
                 closed: t + step <= reg_time.max(now_ms() - 20 * 60_000),
             });
         }
-        // Daily bars: Yahoo stamps them at exchange-local midnight (cash markets) or at the
-        // session open the evening before (futures, 18:00 ET). Rounding to the nearest UTC
-        // midnight labels both with their trading date and is immune to DST changes.
         if iv == "1d" || iv == "1wk" || iv == "1mo" {
+            let tz = exchange_tz(&r["meta"], symbol)?;
             for b in &mut bars {
-                let t = b.timestamp + 12 * 3_600_000;
-                b.timestamp = t - t.rem_euclid(86_400_000);
+                b.timestamp = trading_date(b.timestamp, tz);
             }
         }
         // Yahoo intraday futures/indices sometimes carry a stray open (settlement or
@@ -162,15 +175,18 @@ impl Provider for Yahoo {
         if now_ms() - t > 3 * 3_600_000 {
             notes.push("market closed".into());
         }
-        // previousClose is absent for some symbols; derive it from daily closes.
-        let prev = num(&m["previousClose"]).or_else(|| {
-            let closes: Vec<f64> = r["indicators"]["quote"][0]["close"].as_array()?.iter().filter_map(num).collect();
-            if closes.len() >= 2 {
-                Some(closes[closes.len() - 2])
-            } else {
-                None
+        // previousClose is absent for some symbols: take the last daily close dated before the
+        // quote's trading date (the daily series may not have today's bar yet).
+        let prev = match num(&m["previousClose"]) {
+            Some(p) => Some(p),
+            None => {
+                let tz = exchange_tz(m, symbol)?;
+                let today = trading_date(t, tz);
+                let stamps = r["timestamp"].as_array().cloned().unwrap_or_default();
+                let closes = r["indicators"]["quote"][0]["close"].as_array().cloned().unwrap_or_default();
+                stamps.iter().zip(&closes).filter(|(s, _)| trading_date(s.as_i64().unwrap_or(0) * 1000, tz) < today).filter_map(|(_, c)| num(c)).last()
             }
-        });
+        };
         Ok(Ticker {
             symbol: symbol.into(),
             timestamp: t,
@@ -200,5 +216,22 @@ impl Provider for Yahoo {
                 })
             })
             .collect())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn daily_bars_get_their_exchange_trading_date() {
+        let t = |s: &str| chrono::DateTime::parse_from_rfc3339(s).unwrap().timestamp_millis();
+        let ny: chrono_tz::Tz = "America/New_York".parse().unwrap();
+        // Cash open after the DST change, futures midnight before it, an evening session open.
+        assert_eq!(trading_date(t("2026-11-02T14:30:00Z"), ny), t("2026-11-02T00:00:00Z"));
+        assert_eq!(trading_date(t("2026-10-29T04:00:00Z"), ny), t("2026-10-29T00:00:00Z"));
+        assert_eq!(trading_date(t("2026-11-02T23:00:00Z"), ny), t("2026-11-03T00:00:00Z"));
+        let tokyo: chrono_tz::Tz = "Asia/Tokyo".parse().unwrap();
+        assert_eq!(trading_date(t("2026-11-02T00:00:00Z"), tokyo), t("2026-11-02T00:00:00Z"));
     }
 }
