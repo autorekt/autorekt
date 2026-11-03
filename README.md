@@ -11,37 +11,63 @@ happens.
 > have a more reassuring name.
 
 Four verbs: `show` (read anything), `search` (find anything), `why` (explain a move, or how
-assets relate), `watch` (rules, backtests, alerts). Sources: OKX, Binance, Hyperliquid (incl.
+assets relate), `watch` (rules, backtests, alerts). An agent can also publish its analysis as
+a web page: `autorekt show report.md --share` turns markdown with ```chart blocks into a report
+with live, interactive charts. Sources: OKX, Binance, Hyperliquid (incl.
 24/7 equity perps), Deribit, Coinbase, Yahoo Finance, FRED, CFTC Commitments of Traders, FINRA
 short volume, DefiLlama, Fear & Greed indices, Polymarket, Kalshi, news feeds and the
 ForexFactory calendar. Free data only.
 
 ## What your agent sees
 
-Real output from the night of 2026-11-02 (AI-earnings selloff, a $6.3B exchange hack, a Fed
+Real output from 2026-11-02 and 11-03 (AI-earnings selloff, a $6.3B exchange hack, a Fed
 priced to hike). Lines marked `…` are trimmed.
 
 **A chart** is one line per candle: exact numbers first, the picture only for shape, and the
-stats an agent would otherwise compute.
+stats an agent would otherwise compute. `--with` adds indicator columns (`$` is the series).
+Below the candles comes the longer view: coarser bars further back, swing points and the price
+zones they keep returning to, trend state on several timeframes, positioning, upcoming
+releases, the most correlated instruments, and data-quality checks.
 
 ```
-$ autorekt show BTC -i 4h -n 8
+$ autorekt show BTC -i 4h -n 8 --with 'ta.rsi($,14)'
 quotes  UTC  chg vs 24h ago (crypto) or previous close (TradFi)
-id    last    chg    chg%    bid    ask    low   high  vol(quote)  time         notes
-BTC  76777  -1848  -2.35%  76777  76777  76520  78831        5.2B  11-03 03:33
-okx:BTC/USDT:USDT (BTC)  4h  UTC  11-01 20:00..11-03 00:00  scale 76520..78831 (1 char = 100.48)
-time           open   high    low  close   chg%    vol  |76520              78831|
-11-01 20:00   77767  78388  77556  78309  +0.70   5.1k  |          --███████-    |
-11-02 00:00   78309  78831  78001  78582  +0.35   9.6k  |               ---████--|
-11-02 04:00   78582  78676  77881  78072  -0.65   7.9k  |              -░░░░░░░  |
-11-02 08:00   78072  78354  77750  77855  -0.28   7.8k  |            -░░░---     |
-11-02 12:00   77855  78237  77222  77486  -0.47  17.4k  |       ---░░░░----      |
-11-02 16:00   77486  77657  76667  77063  -0.55  15.1k  | ----░░░░░░-            |
-11-02 20:00   77063  77197  76689  76796  -0.35   7.3k  |  -░░░--                |
-11-03 00:00*  76796  77298  76520  76763  -0.04  10.4k  |--░░-----               |
-summary  chg -1.29%  range 76520..78831 (3.02%)  ATR(7) 789 (1.03%)  last vol 1.0x avg  high@11-02 00:00 low@11-03 00:00
-notable  11-01 20:00 largest gain +0.70%  |  11-02 04:00 largest drop -0.65%  |  11-02 12:00 heaviest volume 1.7x avg
+id    last   chg    chg%    bid    ask    low   high  vol(quote)  time         notes
+BTC  77022  -950  -1.22%  77022  77022  76360  78237        5.4B  11-03 10:51
+okx:BTC/USDT:USDT (BTC)  4h  UTC  11-02 04:00..11-03 08:00  scale 76360..78676 (1 char = 74.72)
+time           open   high    low  close   chg%    vol  ta.rsi($,14)  |76360                      78676|
+11-02 04:00   78582  78676  77881  78072  -0.65   7.9k         47.90  |                    ---░░░░░░░░-|
+11-02 08:00   78072  78354  77750  77855  -0.28   7.8k         45.75  |                   -░░░░----    |
+11-02 12:00   77855  78237  77222  77486  -0.47  17.4k         42.28  |            ---░░░░░░-----      |
+11-02 16:00   77486  77657  76667  77063  -0.55  15.1k         38.66  |    -----░░░░░░░--              |
+11-02 20:00   77063  77197  76689  76796  -0.35   7.3k         36.53  |    --░░░░--                    |
+11-03 00:00   76796  77298  76520  76909  +0.15  11.5k         38.09  |  ----██------                  |
+11-03 04:00   76909  77127  76360  76796  -0.15  10.3k         37.12  |------░░---                     |
+11-03 08:00*  76796  77088  76488  77022  +0.29   6.5k         40.40  |  ----████-                     |
+summary  chg -1.99%  range 76360..78676 (3.03%)  ATR(7) 752 (0.98%)  last vol 0.6x avg  high@11-02 04:00 low@11-03 04:00
+notable  11-03 08:00 largest gain +0.29%  |  11-02 04:00 largest drop -0.65%  |  11-02 12:00 heaviest volume 1.7x avg
 (* = bar still forming)
+
+earlier, compressed (coarser bars before the chart above)
+tf  from         open   high    low  close   chg%  |74897..87374|
+1w  2026-08-24  77726  81520  76664  77640  -0.11  |   -░░------         |
+1w  2026-08-31  77640  82280  76204  80300  +3.43  |  --██████---        |
+…
+1d  2026-11-01  77521  78388  77465  78309  +1.02  |    ██-              |
+1d  2026-11-02  78309  78831  76667  76796  -1.93  |   ░░░-              |
+
+swings (1d, latest of the last year, reversals ≥ 3 ATR = 5688; last point still forming)
+  … → 2026-09-21 H 87374 (+16.7%) → 2026-09-21 L 80822 (-7.5%) → 2026-09-23 H 87245 (+7.9%) → 2026-10-30 L 76260 (-12.6%)
+levels (daily swing zones)
+  above: 79387 (2x, last 2026-08-21, +1.2 ATR) · 80712 (2x, last 2026-09-21, +1.9 ATR) · 82540 (2x, last 2026-09-03, +2.9 ATR)
+  below: 75984 (1x, last 2026-03-17, -0.5 ATR) · 75277 (2x, last 2026-09-15, -0.9 ATR) · 73620 (3x, last 2026-03-05, -1.8 ATR)
+  previous day 11-02 H 78831 L 76667 · previous week H 81944 L 76260
+range  1w -4.77%  1m -10.94%  3m +20.20%  6m -4.76%  1y -27.70%  ·  52w position 36%  ·  from 52w high -30.45%
+state  trend 1h mixed · 4h down · 1d down  ·  RSI(14,1d) 36  ·  ATR(14,1d) 1896 (2.46%, 12th pct of 1y)  ·  20d high +4.1 ATR, low -0.4 ATR
+positioning  funding 0.0001 (+0 24h)  ·  OI 2.6B (+19.3M 24h)  ·  long/short 2.75 (+0.51 24h)
+events (USD, next 3d, UTC)  Tue 15:16 USD Congressional Elections
+related (60d corr with the default board)  ETH +0.92 · SOL +0.86 · NQ +0.63 · ES +0.60
+data quality  1 bar(s) span more than 8x the median range (daily)
 ```
 
 **`why`** finds the move, measures what else moved in the same window, and pulls dated news.
@@ -72,6 +98,10 @@ news around the window (Google News: bitcoin after:2026-10-28 before:2026-10-31)
 10-30 02:54 !!! google/TRM Labs North Korea Steals USD 6.36 Billion From Binance in the Largest Hack in History
 …
 ```
+
+With several ids, `why` gives the correlation matrix of their returns and the pairs that broke
+from a strong relationship (correlation of at least 0.5): the last five bars of one missing
+what a fit on the other implies by three standard deviations or more.
 
 **Boards** put many instruments side by side. Rates and spreads move in basis points, vol
 indices in points, everything else in percent.

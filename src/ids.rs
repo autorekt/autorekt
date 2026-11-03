@@ -35,6 +35,9 @@ impl InstrumentId {
     pub fn base(&self) -> InstrumentId {
         InstrumentId { metric: None, ..self.clone() }
     }
+    pub fn with_metric(&self, m: &str) -> InstrumentId {
+        InstrumentId { metric: Some(m.to_string()), ..self.clone() }
+    }
 }
 
 /// Parsed CCXT unified symbol.
@@ -71,6 +74,12 @@ impl Ccxt {
         self.settle.is_some() && self.expiry.is_none()
     }
 }
+
+/// ISO codes of the currencies Yahoo quotes; six letters naming two of them form an FX pair.
+pub const CURRENCIES: &[&str] = &[
+    "USD", "EUR", "JPY", "GBP", "AUD", "NZD", "CAD", "CHF", "CNY", "CNH", "HKD", "SGD", "KRW", "INR", "MXN", "SEK", "NOK", "DKK", "PLN",
+    "HUF", "CZK", "TRY", "ZAR", "BRL", "THB", "TWD", "ILS",
+];
 
 /// Coins that a bare alias resolves to a crypto perp rather than a Yahoo ticker.
 const CRYPTO: &[&str] = &[
@@ -236,6 +245,9 @@ pub fn parse(input: &str) -> Result<InstrumentId> {
             metric,
         });
     }
+    if upper.len() == 6 && upper.is_ascii() && CURRENCIES.contains(&&upper[..3]) && CURRENCIES.contains(&&upper[3..]) {
+        return Ok(InstrumentId { provider: "yahoo".into(), symbol: format!("{upper}=X"), metric });
+    }
     // Anything else: treat as a Yahoo ticker (stocks, ETFs, ^indices, =F futures, =X FX).
     Ok(InstrumentId { provider: "yahoo".into(), symbol: upper, metric })
 }
@@ -280,6 +292,8 @@ mod tests {
         assert_eq!(parse("BINANCE:BTCUSDT.P").unwrap().to_string(), "binance:BTC/USDT:USDT");
         assert_eq!(parse("VIX").unwrap().to_string(), "yahoo:^VIX");
         assert_eq!(parse("AAPL").unwrap().to_string(), "yahoo:AAPL");
+        assert_eq!(parse("audjpy").unwrap().to_string(), "yahoo:AUDJPY=X");
+        assert_eq!(parse("USDJPY").unwrap().to_string(), "yahoo:JPY=X");
         assert_eq!(parse("btc#funding_rate").unwrap().metric.as_deref(), Some("funding_rate"));
         assert_eq!(parse("yahoo:^GSPC").unwrap().symbol, "^GSPC");
         assert_eq!(parse("okx:BTC-USDT-SWAP").unwrap().symbol, "BTC/USDT:USDT");

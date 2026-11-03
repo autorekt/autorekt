@@ -12,6 +12,7 @@ mod providers;
 mod render;
 mod rules;
 mod store;
+mod structure;
 
 fn main() {
     let rt = tokio::runtime::Builder::new_multi_thread().enable_all().build().expect("tokio runtime");

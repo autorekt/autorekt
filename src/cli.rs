@@ -10,7 +10,7 @@ const ABOUT: &str = "autorekt — market observation for agents. Start with: aut
 
   show    read anything: briefing, boards, charts, odds, news, calendar, alerts
   search  find anything: ids, tickers, prediction markets, news
-  why     explain: a move (one id) or how assets relate (several ids)
+  why     explain: a move (one id), or how assets relate and which pairs broke from it (several ids)
   watch   get alerted: rules, backtests, waiting, Python monitors
   daemon  background service (starts by itself when needed)
 
@@ -28,17 +28,29 @@ const SHOW_HELP: &str = "WHAT is one of:
   funding [COINS]  funding across venues, annualized          prelaunch    pre-launch and pre-IPO perps
   odds             trending prediction markets                 news [TOPIC] headlines (markets, macro, crypto)
   calendar [CCY]   macro releases                              alerts       this machine's rule and monitor events
-  ID               one series: text candles, or sparkline + table for single-value series
+  ID               one series: text candles (or sparkline + table for single-value series),
+                   then compressed earlier history, swings, levels, state, events and data checks
   ID ID ...        one row per id: last, changes, trend, flags
+  FILE.md          a markdown report; each line of a ```chart block is a chart in show syntax
+                   (several lines = one chart with tabs). Prints a text preview; --share publishes
+                   it as a page with live interactive charts.
 
 Examples:
   autorekt show
   autorekt show fear
   autorekt show BTC -i 4h -n 30
+  autorekt show GOLD -i 1d --with 'ta.rsi($,14)' --with 'ta.sma($,50)'
   autorekt show 'fred:SOFR - fred:IORB' -i 1d -r 90d
   autorekt show NQ -i 15m --at 2026-10-30T20:00:00Z
   autorekt show BTC ETH 'RSP / SPY' --changes
-  autorekt show BTC -i 15m --share";
+  autorekt show BTC -i 15m --share
+  autorekt show report.md --share
+
+A report chart block:
+  ```chart
+  BTC -i 1h -r 7d --overlay BTC#open_interest
+  RSP / SPY -i 1d -r 120d
+  ```";
 
 const SEARCH_HELP: &str = "Searches instruments (OKX, Hyperliquid, Yahoo, CFTC), prediction markets (Polymarket,
 Kalshi) and news. Without a query: the sources and their status (--check probes them).
@@ -176,7 +188,10 @@ pub struct ShowArgs {
     /// Overlay matching headlines on a chart.
     #[arg(long)]
     pub news: bool,
-    /// Print a public link to an interactive chart instead of text.
+    /// Extra column for a chart: an expression where $ is the series, e.g. 'ta.rsi($,14)'.
+    #[arg(long)]
+    pub with: Vec<String>,
+    /// Print a public link to an interactive chart (or a FILE.md report) instead of text.
     #[arg(long)]
     pub share: bool,
     /// With --share: extra series drawn on their own scale.
@@ -319,6 +334,35 @@ pub struct DaemonArgs {
     /// For logs: number of lines.
     #[arg(short = 'n', long, default_value_t = 40)]
     pub lines: usize,
+}
+
+/// Parse one line of a ```chart block ("BTC -i 1h -r 7d --overlay BTC#open_interest") with the
+/// same options as `show`; quotes group words as in a shell.
+pub fn parse_chart_line(line: &str) -> Result<ShowArgs> {
+    let mut words: Vec<String> = vec!["autorekt".into(), "show".into()];
+    let mut cur = String::new();
+    let mut quote: Option<char> = None;
+    for c in line.chars() {
+        match (quote, c) {
+            (Some(q), c) if c == q => quote = None,
+            (Some(_), c) => cur.push(c),
+            (None, '\'' | '"') => quote = Some(c),
+            (None, c) if c.is_whitespace() => {
+                if !cur.is_empty() {
+                    words.push(std::mem::take(&mut cur));
+                }
+            }
+            (None, c) => cur.push(c),
+        }
+    }
+    if !cur.is_empty() {
+        words.push(cur);
+    }
+    match Cli::try_parse_from(words) {
+        Ok(Cli { cmd: Cmd::Show(a), .. }) => Ok(a),
+        Ok(_) => anyhow::bail!("not a chart line"),
+        Err(e) => anyhow::bail!("{}", e.to_string().lines().next().unwrap_or("invalid chart line")),
+    }
 }
 
 fn opts(g: &Global) -> Result<Opts> {

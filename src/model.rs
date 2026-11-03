@@ -1,6 +1,7 @@
 //! Unified data types. Field names follow CCXT structures and pandas OHLCV columns.
 
 use anyhow::{bail, Result};
+use chrono::{Datelike, TimeZone, Utc};
 use serde::{Deserialize, Serialize};
 use std::fmt;
 
@@ -203,11 +204,29 @@ pub fn now_ms() -> i64 {
     chrono::Utc::now().timestamp_millis()
 }
 
+/// Start of the bar of `tf` containing `ms` (UTC): weeks start on Monday, months on the 1st,
+/// everything else on multiples of the timeframe.
+pub fn bucket_start(ms: i64, tf: Timeframe) -> i64 {
+    const DAY: i64 = 86_400_000;
+    match tf.secs {
+        s if s == 7 * 86400 => {
+            let day = ms - ms.rem_euclid(DAY);
+            // 1970-01-01 was a Thursday: (days + 3) mod 7 is the weekday with Monday = 0.
+            day - (day / DAY + 3).rem_euclid(7) * DAY
+        }
+        Timeframe::MONTH => {
+            let d = Utc.timestamp_millis_opt(ms).single().unwrap_or_default();
+            Utc.with_ymd_and_hms(d.year(), d.month(), 1, 0, 0, 0).single().map(|m| m.timestamp_millis()).unwrap_or(ms)
+        }
+        _ => ms - ms.rem_euclid(tf.ms()),
+    }
+}
+
 /// Resample bars into a coarser timeframe (OHLCV aggregation rules).
 pub fn resample(bars: &[Bar], tf: Timeframe) -> Vec<Bar> {
     let mut out: Vec<Bar> = Vec::new();
     for b in bars {
-        let bucket = b.timestamp - b.timestamp.rem_euclid(tf.ms());
+        let bucket = bucket_start(b.timestamp, tf);
         match out.last_mut() {
             Some(last) if last.timestamp == bucket => {
                 last.high = last.high.max(b.high);
@@ -220,4 +239,20 @@ pub fn resample(bars: &[Bar], tf: Timeframe) -> Vec<Bar> {
         }
     }
     out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn buckets_start_on_mondays_and_month_firsts() {
+        let t = |s: &str| chrono::DateTime::parse_from_rfc3339(s).unwrap().timestamp_millis();
+        let week = Timeframe { secs: 7 * 86400 };
+        assert_eq!(bucket_start(t("2026-11-05T13:30:00Z"), week), t("2026-11-02T00:00:00Z"));
+        assert_eq!(bucket_start(t("2026-11-02T00:00:00Z"), week), t("2026-11-02T00:00:00Z"));
+        assert_eq!(bucket_start(t("2026-11-01T23:59:00Z"), week), t("2026-10-26T00:00:00Z"));
+        assert_eq!(bucket_start(t("2026-11-05T13:30:00Z"), Timeframe { secs: Timeframe::MONTH }), t("2026-11-01T00:00:00Z"));
+        assert_eq!(bucket_start(t("2026-11-05T13:30:00Z"), Timeframe { secs: 4 * 3600 }), t("2026-11-05T12:00:00Z"));
+    }
 }

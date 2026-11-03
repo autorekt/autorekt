@@ -3,8 +3,10 @@
 mod alerts;
 mod analysis;
 mod brief;
+mod context;
 mod crypto;
 mod monitor;
+mod report;
 mod rule;
 mod search;
 mod service;

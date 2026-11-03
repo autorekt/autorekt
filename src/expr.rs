@@ -295,8 +295,8 @@ fn ref_of(call: &str, args: &[Ast], tf: Timeframe) -> Result<Option<(InstrumentI
 pub fn needs(ast: &Ast, tf: Timeframe, out: &mut BTreeSet<Need>) -> Result<()> {
     match ast {
         Ast::Num(_) => {}
-        // A quoted id used as a value ("kalshi:KXFED-26DEC-H25" > 0.5). Quoted strings that
-        // are function arguments (durations, outcomes) are skipped by the Call branch below.
+        // A quoted id used as a value ("kalshi:KXFED-26DEC-H25" > 0.5). Quoted durations and
+        // the extra arguments of series functions are skipped by the Call branch below.
         Ast::Str(name) | Ast::Ref(name) => {
             let id = ids::parse(name)?;
             out.insert(Need { id, tf_secs: tf.secs });
@@ -312,7 +312,7 @@ pub fn needs(ast: &Ast, tf: Timeframe, out: &mut BTreeSet<Need>) -> Result<()> {
                 }
             } else {
                 for a in args {
-                    if !matches!(a, Ast::Str(_)) {
+                    if !matches!(a, Ast::Str(s) if Timeframe::parse(s).is_ok()) {
                         needs(a, tf, out)?;
                     }
                 }
@@ -740,9 +740,9 @@ mod tests {
         assert!(parse("abs(ta.change(prob(\"polymarket:x\"), \"6h\")) >= 0.05").is_ok());
         // Quoted ids as values are data needs; quoted durations inside calls are not.
         let mut ns = std::collections::BTreeSet::new();
-        needs(&parse("\"BTC\" > 1 and ta.change(VIX, \"6h\") > 1").unwrap(), Timeframe::H1, &mut ns).unwrap();
+        needs(&parse("\"BTC\" > 1 and ta.change(VIX, \"6h\") > 1 and ta.rsi(\"GOLD\", 14) > 50").unwrap(), Timeframe::H1, &mut ns).unwrap();
         let got: Vec<String> = ns.iter().map(|n| n.id.to_string()).collect();
-        assert_eq!(got, vec!["okx:BTC/USDT:USDT".to_string(), "yahoo:^VIX".to_string()]);
+        assert_eq!(got, vec!["okx:BTC/USDT:USDT".to_string(), "yahoo:GC=F".to_string(), "yahoo:^VIX".to_string()]);
         match parse("kalshi:KXFED-26DEC-H25 > 0.5").unwrap() {
             Ast::Bin(_, a, _) => assert!(matches!(*a, Ast::Ref(ref s) if s == "kalshi:KXFED-26DEC-H25")),
             _ => panic!(),

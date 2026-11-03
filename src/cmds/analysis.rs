@@ -1,8 +1,10 @@
 //! `why`: explain. One id: locate a move, measure what else moved in the same window as
-//! z-scores, and collect dated news. Several ids (or none): the correlation matrix of returns.
+//! z-scores, and collect dated news. Several ids (or none): the correlation matrix of returns
+//! and the pairs that recently broke from their usual relationship.
 
 use super::*;
 use crate::cli::WhyArgs;
+use serde::Serialize;
 
 pub async fn why(a: WhyArgs, g: &Global, o: &Opts) -> Result<()> {
     if a.ids.len() == 1 {
@@ -26,7 +28,7 @@ async fn corr(list: Vec<String>, interval: &str, limit: usize, g: &Global, o: &O
     let futs = parsed.iter().map(|id| providers::ohlcv(id, tf, Range::last(limit + 10)));
     let res = futures::future::join_all(futs).await;
     // Align on timestamps present for each pair; returns are log changes (yields/VIX: differences).
-    let mut series: Vec<(String, std::collections::BTreeMap<i64, f64>)> = Vec::new();
+    let mut series: Vec<(String, std::collections::BTreeMap<i64, f64>, bool)> = Vec::new();
     for (id, r) in parsed.iter().zip(res) {
         let bars = r.with_context(|| format!("fetching {id}"))?;
         let level_like = matches!(ids::label(id).as_str(), "US10Y" | "US5Y" | "US30Y" | "US3M" | "VIX" | "MOVE") || id.provider == "fred";
@@ -41,52 +43,106 @@ async fn corr(list: Vec<String>, interval: &str, limit: usize, g: &Global, o: &O
         }
         let keep: Vec<i64> = m.keys().rev().take(limit).cloned().collect();
         m.retain(|k, _| keep.contains(k));
-        series.push((ids::label(id), m));
+        series.push((ids::label(id), m, level_like));
     }
     let n = series.len();
-    let mut mat = vec![vec![f64::NAN; n]; n];
-    let mut counts = vec![vec![0usize; n]; n];
+    let mut rel: Vec<Vec<Option<Relation>>> = (0..n).map(|_| (0..n).map(|_| None).collect()).collect();
     for i in 0..n {
         for j in 0..n {
-            let (a, b) = (&series[i].1, &series[j].1);
-            let pairs: Vec<(f64, f64)> = a.iter().filter_map(|(t, x)| b.get(t).map(|y| (*x, *y))).collect();
-            counts[i][j] = pairs.len();
-            if pairs.len() >= 8 {
-                let (xs, ys): (Vec<f64>, Vec<f64>) = pairs.into_iter().unzip();
-                let (mx, my) = (render::mean(&xs), render::mean(&ys));
-                let cov: f64 = xs.iter().zip(&ys).map(|(x, y)| (x - mx) * (y - my)).sum();
-                let vx: f64 = xs.iter().map(|x| (x - mx).powi(2)).sum();
-                let vy: f64 = ys.iter().map(|y| (y - my).powi(2)).sum();
-                mat[i][j] = cov / (vx * vy).sqrt();
+            let pairs: Vec<(f64, f64)> = series[j].1.iter().filter_map(|(t, x)| series[i].1.get(t).map(|y| (*x, *y))).collect();
+            rel[i][j] = relation(&pairs);
+        }
+    }
+    let corr = |i: usize, j: usize| rel[i][j].as_ref().map_or(f64::NAN, |r| r.corr);
+    // Of the two directions of a pair, the one whose residual strayed further.
+    let mut breaks: Vec<(usize, usize, &Relation)> = Vec::new();
+    for i in 0..n {
+        for j in i + 1..n {
+            let (Some(a), Some(b)) = (&rel[i][j], &rel[j][i]) else { continue };
+            let (y, x, r) = if a.z.abs() >= b.z.abs() { (i, j, a) } else { (j, i, b) };
+            if r.corr.abs() >= MIN_CORR && r.z.abs() >= MIN_Z {
+                breaks.push((y, x, r));
             }
         }
     }
+    breaks.sort_by(|a, b| b.2.z.abs().total_cmp(&a.2.z.abs()));
+    breaks.truncate(8);
     if g.json {
-        return print_json(&json!({"ids": series.iter().map(|s| &s.0).collect::<Vec<_>>(), "matrix": mat, "observations": counts}));
+        let matrix: Vec<Vec<f64>> = (0..n).map(|i| (0..n).map(|j| corr(i, j)).collect()).collect();
+        let observations: Vec<Vec<usize>> = (0..n).map(|i| (0..n).map(|j| rel[i][j].as_ref().map_or(0, |r| r.n)).collect()).collect();
+        let breaks: Vec<_> = breaks.iter().map(|(y, x, r)| json!({"id": series[*y].0, "against": series[*x].0, "relation": r})).collect();
+        return print_json(&json!({"ids": series.iter().map(|s| &s.0).collect::<Vec<_>>(), "matrix": matrix, "observations": observations, "breaks": breaks}));
     }
     println!("correlation of {} changes, last {} bars ({}; yields/VIX use differences, others log returns)", tf, limit, o.tz_name());
     let mut rows = vec![std::iter::once("".to_string()).chain(series.iter().map(|s| s.0.chars().take(6).collect())).collect::<Vec<_>>()];
     for i in 0..n {
         let mut r = vec![series[i].0.clone()];
         for j in 0..n {
-            r.push(if i == j { "1".into() } else if mat[i][j].is_finite() { format!("{:+.2}", mat[i][j]) } else { "-".into() });
+            r.push(if i == j { "1".into() } else if corr(i, j).is_finite() { format!("{:+.2}", corr(i, j)) } else { "-".into() });
         }
         rows.push(r);
     }
     print!("{}", render::table(&rows));
     // Strongest pairs, for quick reading.
-    let mut pairs: Vec<(f64, usize, usize)> = Vec::new();
-    for i in 0..n {
-        for j in i + 1..n {
-            if mat[i][j].is_finite() {
-                pairs.push((mat[i][j], i, j));
-            }
-        }
-    }
-    pairs.sort_by(|a, b| b.0.abs().partial_cmp(&a.0.abs()).unwrap());
+    let mut pairs: Vec<(f64, usize, usize)> = (0..n).flat_map(|i| (i + 1..n).map(move |j| (i, j))).map(|(i, j)| (corr(i, j), i, j)).filter(|p| p.0.is_finite()).collect();
+    pairs.sort_by(|a, b| b.0.abs().total_cmp(&a.0.abs()));
     let top: Vec<String> = pairs.iter().take(8).map(|(c, i, j)| format!("{}~{} {:+.2}", series[*i].0, series[*j].0, c)).collect();
     println!("strongest: {}", top.join("  "));
+    println!("\nbreaks: the last {LAST} bars against the fit over the earlier ones, where |corr| ≥ {MIN_CORR} and |residual z| ≥ {MIN_Z}");
+    if breaks.is_empty() {
+        println!("  none");
+        return Ok(());
+    }
+    let change = |v: f64, level: bool| if level { format!("{:+}", render::fmt_sig(v)) } else { format!("{:+.2}%", v.exp_m1() * 100.0) };
+    let mut t = vec![["id", "against", "corr", &format!("corr {RECENT}")[..], "residual z", "moved", "implied"].map(String::from).to_vec()];
+    for (y, x, r) in &breaks {
+        t.push(vec![series[*y].0.clone(), series[*x].0.clone(), format!("{:+.2}", r.corr), format!("{:+.2}", r.recent), format!("{:+.1}", r.z), change(r.moved, series[*y].2), change(r.implied, series[*y].2)]);
+    }
+    print!("{}", render::table(&t));
     Ok(())
+}
+
+/// Observations in the recent correlation, and returns in the tested move.
+const RECENT: usize = 20;
+const LAST: usize = 5;
+/// A break needs a relationship worth trusting and a large miss: with dozens of pairs, looser
+/// thresholds flag some pair on most days.
+const MIN_CORR: f64 = 0.5;
+const MIN_Z: f64 = 3.0;
+
+/// How `y` relates to `x`, from aligned (x, y) changes in time order: correlation over all of
+/// them and over the last `RECENT`, and how far the sum of the last `LAST` changes of `y` is
+/// from what a regression on `x` over the earlier ones implies, in residual standard deviations.
+#[derive(Debug, Serialize)]
+struct Relation {
+    n: usize,
+    corr: f64,
+    recent: f64,
+    z: f64,
+    moved: f64,
+    implied: f64,
+}
+
+fn relation(pairs: &[(f64, f64)]) -> Option<Relation> {
+    if pairs.len() < 8 {
+        return None;
+    }
+    let (xs, ys): (Vec<f64>, Vec<f64>) = pairs.iter().copied().unzip();
+    let (base, tail) = (pairs.len() - LAST, pairs.len().saturating_sub(RECENT));
+    let (bx, by) = (&xs[..base], &ys[..base]);
+    let (mx, my) = (render::mean(bx), render::mean(by));
+    let beta = bx.iter().zip(by).map(|(x, y)| (x - mx) * (y - my)).sum::<f64>() / bx.iter().map(|x| (x - mx).powi(2)).sum::<f64>();
+    let residuals: Vec<f64> = bx.iter().zip(by).map(|(x, y)| y - my - beta * (x - mx)).collect();
+    let moved: f64 = ys[base..].iter().sum();
+    let implied: f64 = xs[base..].iter().map(|x| my + beta * (x - mx)).sum();
+    Some(Relation {
+        n: pairs.len(),
+        corr: render::correlation(&xs, &ys),
+        recent: render::correlation(&xs[tail..], &ys[tail..]),
+        z: (moved - implied) / (render::stdev(&residuals) * (LAST as f64).sqrt()),
+        moved,
+        implied,
+    })
 }
 
 fn news_words(label: &str, id: &ids::InstrumentId) -> String {
@@ -203,7 +259,7 @@ async fn explain_move(input: &str, at: Option<String>, window: &str, lookback: &
         move_pct.map(|m| format!("{m:+.2}%")).unwrap_or("-".into())
     );
     let view: Vec<Bar> = ctx_bars.iter().filter(|b| b.timestamp >= w0 - win && b.timestamp < w1 + win / 2).cloned().collect();
-    print!("{}", render::candles::render(&render::candles::CandleView { title: id.to_string(), tf_label: tf.to_string(), bars: &view, step_ms: tf.ms(), notes: vec![], events: &local }, o));
+    print!("{}", render::candles::render(&render::candles::CandleView { title: id.to_string(), tf_label: tf.to_string(), bars: &view, step_ms: tf.ms(), notes: vec![], events: &local, extra: &[] }, o));
     println!("\nwhat else moved in the window (z = move / typical move of that length over the prior 20d):");
     let mut t = vec![vec!["id".to_string(), "change".into(), "z".into(), "".into()]];
     for (l, c, z, level) in &moves {
@@ -218,4 +274,24 @@ async fn explain_move(input: &str, at: Option<String>, window: &str, lookback: &
     print!("{}", render::series::events(&headlines, o, false));
     println!("\nread: a move shared by many assets with high |z| is macro (rates, dollar, risk appetite); a move alone in {label} is idiosyncratic — look for asset-specific news.");
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn relation_flags_a_follower_that_stopped_following() {
+        // y = 2x with a little noise, then over the last five bars y falls while x rises.
+        let mut pairs: Vec<(f64, f64)> = (0..40).map(|i| {
+            let x = ((i * 7 % 11) as f64 - 5.0) / 100.0;
+            (x, 2.0 * x + if i % 2 == 0 { 0.001 } else { -0.001 })
+        }).collect();
+        pairs.extend((0..5).map(|_| (0.01, -0.01)));
+        let r = relation(&pairs).unwrap();
+        assert!(r.corr > 0.5, "{r:?}");
+        assert!(r.z < -10.0, "{r:?}");
+        assert!((r.implied - 0.1).abs() < 0.01 && (r.moved + 0.05).abs() < 1e-9, "{r:?}");
+        assert!(relation(&pairs[..7]).is_none());
+    }
 }

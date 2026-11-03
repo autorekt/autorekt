@@ -13,6 +13,10 @@ pub struct Series {
     pub range: Option<String>,
     pub at: Option<String>,
     pub news: bool,
+    /// Expressions shown as extra columns; `$` stands for the series itself.
+    pub with: Vec<String>,
+    /// Print the longer context (history, structure, state, events) under the chart.
+    pub context: bool,
 }
 
 pub async fn board(items: &[String], name: &str, g: &Global, o: &Opts) -> Result<()> {
@@ -42,22 +46,43 @@ fn unit_label(id: &ids::InstrumentId) -> &'static str {
     }
 }
 
-pub async fn chart(s: &Series, g: &Global, o: &Opts) -> Result<()> {
+/// The bars of a series (an expression's values as flat bars), as `chart` would show them.
+pub async fn fetch(s: &Series) -> Result<Vec<Bar>> {
     let tf = Timeframe::parse(&s.interval)?;
+    let line = expr::is_expression(&s.id) || is_line(&ids::parse(&s.id)?);
+    fetch_range(s, tf, series_range(s, tf, if line { 72 } else { 48 })?).await
+}
+
+async fn fetch_range(s: &Series, tf: Timeframe, r: Range) -> Result<Vec<Bar>> {
     if expr::is_expression(&s.id) {
-        let r = series_range(s, tf, 72)?;
         let (grid, vals) = expr::evaluate(&s.id, tf, r).await?;
-        let bars: Vec<Bar> = grid.iter().zip(vals.iter()).filter(|(_, v)| v.is_finite()).map(|(t, v)| Bar::point(*t, *v)).collect();
-        return line(&s.id, "expression", &bars, tf.ms(), g, o);
+        return Ok(grid.iter().zip(vals.iter()).filter(|(_, v)| v.is_finite()).map(|(t, v)| Bar::point(*t, *v)).collect());
     }
     let id = ids::parse(&s.id)?;
-    let line_view = is_line(&id);
-    let r = series_range(s, tf, if line_view { 72 } else { 48 })?;
-    let bars = providers::ohlcv(&id, tf, r).await.with_context(|| format!("fetching {id}"))?;
-    if line_view {
-        let step = bars.windows(2).map(|w| w[1].timestamp - w[0].timestamp).min().unwrap_or(tf.ms()).max(1);
-        return line(&id.to_string(), unit_label(&id), &bars, step, g, o);
+    providers::ohlcv(&id, tf, r).await.with_context(|| format!("fetching {id}"))
+}
+
+/// The `--with` expressions evaluated on the bars' timestamps.
+async fn columns(s: &Series, tf: Timeframe, r: Range, bars: &[Bar]) -> Result<Vec<render::Column>> {
+    let Some(first) = bars.first() else { return Ok(vec![]) };
+    let me = if expr::is_expression(&s.id) { format!("({})", s.id) } else { format!("\"{}\"", s.id) };
+    let mut out = Vec::new();
+    for w in &s.with {
+        let range = Range { start: Some(first.timestamp), end: r.end, limit: bars.len() + 5 };
+        let (grid, vals) = expr::evaluate(&w.replace('$', &me), tf, range).await.with_context(|| format!("--with {w}"))?;
+        let at: std::collections::HashMap<i64, f64> = grid.into_iter().zip(vals).collect();
+        out.push(render::Column { label: w.clone(), values: bars.iter().map(|b| at.get(&b.timestamp).copied().unwrap_or(f64::NAN)).collect() });
     }
+    Ok(out)
+}
+
+pub async fn chart(s: &Series, g: &Global, o: &Opts) -> Result<()> {
+    let tf = Timeframe::parse(&s.interval)?;
+    let id = (!expr::is_expression(&s.id)).then(|| ids::parse(&s.id)).transpose()?;
+    let line_view = id.as_ref().map_or(true, is_line);
+    let r = series_range(s, tf, if line_view { 72 } else if s.context { 24 } else { 48 })?;
+    let bars = fetch_range(s, tf, r).await?;
+    let extra = columns(s, tf, r, &bars).await?;
     if g.json {
         return print_json(&bars);
     }
@@ -68,36 +93,35 @@ pub async fn chart(s: &Series, g: &Global, o: &Opts) -> Result<()> {
         }
         return Ok(());
     }
+    match &id {
+        Some(id) if !line_view => candles(id, s, tf, &bars, &extra, o).await?,
+        Some(id) => {
+            let step = bars.windows(2).map(|w| w[1].timestamp - w[0].timestamp).min().unwrap_or(tf.ms()).max(1);
+            print!("{}", series::line(&id.to_string(), unit_label(id), &bars, step, 24, &extra, o));
+        }
+        None => print!("{}", series::line(&s.id, "expression", &bars, tf.ms(), 24, &extra, o)),
+    }
+    if s.context {
+        context::print(s, &bars, o).await?;
+    }
+    Ok(())
+}
+
+async fn candles(id: &ids::InstrumentId, s: &Series, tf: Timeframe, bars: &[Bar], extra: &[render::Column], o: &Opts) -> Result<()> {
     if s.at.is_none() {
-        let t = providers::ticker(&id).await.with_context(|| format!("quote for {id}"))?;
-        print!("{}", series::quotes(&[(ids::label(&id), Ok(t))], o));
+        let t = providers::ticker(id).await.with_context(|| format!("quote for {id}"))?;
+        print!("{}", series::quotes(&[(ids::label(id), Ok(t))], o));
     }
     let evs = if s.news {
-        let mut v = feeds::google(&format!("{} market", ids::label(&id).trim_start_matches('^'))).await.context("--news: headline search failed")?;
+        let mut v = feeds::google(&format!("{} market", ids::label(id).trim_start_matches('^'))).await.context("--news: headline search failed")?;
         v.retain(|e| e.severity >= 1);
         v
     } else {
         vec![]
     };
     let notes = providers::get(&id.provider)?.notes(&id.symbol);
-    let title = if ids::label(&id) != id.to_string() { format!("{} ({})", id, ids::label(&id)) } else { id.to_string() };
-    print!("{}", candle_view::render(&candle_view::CandleView { title, tf_label: tf.to_string(), bars: &bars, step_ms: tf.ms(), notes, events: &evs }, o));
-    Ok(())
-}
-
-fn line(title: &str, unit: &str, bars: &[Bar], step: i64, g: &Global, o: &Opts) -> Result<()> {
-    if g.json {
-        let pts: Vec<MetricPoint> = bars.iter().map(|b| MetricPoint { timestamp: b.timestamp, value: b.close }).collect();
-        return print_json(&pts);
-    }
-    if g.csv {
-        println!("timestamp,value");
-        for b in bars {
-            println!("{},{}", b.timestamp, b.close);
-        }
-        return Ok(());
-    }
-    print!("{}", series::line(title, unit, bars, step, 24, o));
+    let title = if ids::label(id) != id.to_string() { format!("{} ({})", id, ids::label(id)) } else { id.to_string() };
+    print!("{}", candle_view::render(&candle_view::CandleView { title, tf_label: tf.to_string(), bars, step_ms: tf.ms(), notes, events: &evs, extra }, o));
     Ok(())
 }
 
@@ -110,7 +134,7 @@ pub async fn market(id: &ids::InstrumentId, s: &Series, g: &Global, o: &Opts) ->
     print!("{}", series::prob_markets(&ms, true));
     if ms.len() == 1 {
         println!();
-        chart(&Series { id: ms[0].id.clone(), interval: s.interval.clone(), limit: s.limit, range: s.range.clone(), at: s.at.clone(), news: false }, g, o).await?;
+        chart(&Series { id: ms[0].id.clone(), interval: s.interval.clone(), limit: s.limit, range: s.range.clone(), at: s.at.clone(), news: false, with: s.with.clone(), context: false }, g, o).await?;
     }
     Ok(())
 }

@@ -4,7 +4,7 @@ use super::*;
 use crate::model::{Bar, Event, ProbMarket, Ticker};
 
 /// Sparkline + stats + a compact table of the most recent points.
-pub fn line(title: &str, unit: &str, bars: &[Bar], step_ms: i64, rows: usize, o: &Opts) -> String {
+pub fn line(title: &str, unit: &str, bars: &[Bar], step_ms: i64, rows: usize, extra: &[Column], o: &Opts) -> String {
     if bars.is_empty() {
         return format!("{title}  no data\n");
     }
@@ -43,7 +43,7 @@ pub fn line(title: &str, unit: &str, bars: &[Bar], step_ms: i64, rows: usize, o:
     }
     out.push_str(&stats);
     out.push('\n');
-    let mut t: Vec<Vec<String>> = vec![vec!["time".into(), "value".into(), "chg".into(), "".into()]];
+    let mut t: Vec<Vec<String>> = vec![[vec!["time".into(), "value".into(), "chg".into()], extra.iter().map(|c| c.label.clone()).collect(), vec!["".into()]].concat()];
     let start = bars.len().saturating_sub(rows);
     for i in start..bars.len() {
         let b = &bars[i];
@@ -56,7 +56,7 @@ pub fn line(title: &str, unit: &str, bars: &[Bar], step_ms: i64, rows: usize, o:
         } else {
             ""
         };
-        t.push(vec![o.time_label(b.timestamp, step_ms, span), fmt_price(b.close, dec), chg, mark.into()]);
+        t.push([vec![o.time_label(b.timestamp, step_ms, span), fmt_price(b.close, dec), chg], extra.iter().map(|c| c.cell(i)).collect(), vec![mark.into()]].concat());
     }
     out.push_str(&table(&t));
     out
