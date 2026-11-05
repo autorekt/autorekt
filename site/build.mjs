@@ -1,7 +1,8 @@
 // Builds autorekt.com from the repository READMEs, the only source of the site's words. For each
 // language: index.html (the README rendered into template.html with that language's interface
 // strings) and index.md (the README itself); plus llms.txt, a pointer for language models; the
-// install scripts; and the release binaries from dist/ with their checksums under dl/.
+// sitemap and robots.txt for search engines; the install scripts; and the release binaries from
+// dist/ with their checksums under dl/.
 // SITE_URL (default https://autorekt.com) is the address baked into the install scripts; CI
 // builds the site for a local server to test the real install commands.
 import { createHash } from "node:crypto";
@@ -146,6 +147,17 @@ writeFileSync(
     `- [Source code](https://github.com/autorekt/autorekt)\n`,
 );
 console.log("built public/llms.txt");
+
+const pages = LANGS.map((l) => `${SITE}/${l.out.slice("public/".length)}`);
+const alternates = LANGS.map((l, i) => `<xhtml:link rel="alternate" hreflang="${JSON.parse(read(l.strings)).lang}" href="${pages[i]}"/>`).join("");
+writeFileSync(
+  here("public/sitemap.xml"),
+  `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9" xmlns:xhtml="http://www.w3.org/1999/xhtml">\n` +
+    pages.map((p) => `<url><loc>${p}</loc>${alternates}</url>\n`).join("") +
+    `</urlset>\n`,
+);
+writeFileSync(here("public/robots.txt"), `User-agent: *\nAllow: /\n\nSitemap: ${SITE}/sitemap.xml\n`);
+console.log("built public/sitemap.xml and public/robots.txt");
 
 for (const f of ["install.sh", "install.ps1", "install.cmd"]) {
   const text = read(`install/${f}`).replaceAll("{{SITE}}", SITE);
