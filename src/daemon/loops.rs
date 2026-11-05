@@ -4,7 +4,6 @@
 
 use super::*;
 use crate::http::{get_json, num};
-use std::os::unix::fs::PermissionsExt;
 
 pub(super) async fn rule_loop() {
     let mut next_due: HashMap<String, i64> = HashMap::new();
@@ -145,8 +144,7 @@ pub(super) async fn run_hook(cmd: &str, rule: &rules::Rule, e: &Event, value: Op
             }
         }
     }
-    let mut c = tokio::process::Command::new("sh");
-    c.arg("-c").arg(cmd);
+    let mut c = crate::os::shell(cmd);
     c.env("AUTOREKT_EVENT", "rule")
         .env("AUTOREKT_RULE", &rule.name)
         .env("AUTOREKT_EXPR", rule.expr.as_deref().unwrap_or(""))
@@ -192,10 +190,7 @@ pub(super) async fn monitor_loop(st: St) {
                     continue;
                 }
                 let is_py = p.extension().map_or(false, |x| x == "py");
-                let exec = std::fs::metadata(&p).map(|m| {
-                    m.permissions().mode() & 0o111 != 0
-                });
-                if is_py || exec.unwrap_or(false) {
+                if is_py || crate::os::is_executable(&p) {
                     want.insert(name, p);
                 }
             }
@@ -207,9 +202,7 @@ pub(super) async fn monitor_loop(st: St) {
             let ch = children.get_mut(&n).unwrap();
             if gone {
                 if let Some(pid) = ch.id() {
-                    unsafe {
-                        libc::kill(-(pid as i32), libc::SIGTERM);
-                    }
+                    crate::os::end_group(pid);
                 }
                 children.remove(&n);
                 st.monitors.lock().await.remove(&n);
@@ -241,17 +234,15 @@ pub(super) async fn monitor_loop(st: St) {
             let Ok(logf) = std::fs::OpenOptions::new().create(true).append(true).open(&log_path) else { continue };
             let is_py = p.extension().map_or(false, |x| x == "py");
             let mut cmd = if is_py {
-                let mut c = tokio::process::Command::new("python3");
+                let mut c = tokio::process::Command::new(crate::os::PYTHON);
                 c.arg("-u").arg(&p);
                 c
             } else {
                 tokio::process::Command::new(&p)
             };
             let sdk = config::home().join("sdk");
-            let pypath = match std::env::var("PYTHONPATH") {
-                Ok(x) if !x.is_empty() => format!("{}:{x}", sdk.display()),
-                _ => sdk.display().to_string(),
-            };
+            let others = std::env::var_os("PYTHONPATH").unwrap_or_default();
+            let Ok(pypath) = std::env::join_paths(std::iter::once(sdk).chain(std::env::split_paths(&others))) else { continue };
             cmd.current_dir(config::home().join("monitors"))
                 .env("AUTOREKT_HOME", config::home())
                 .env("AUTOREKT_MONITOR", &n)
@@ -259,8 +250,8 @@ pub(super) async fn monitor_loop(st: St) {
                 .stdin(std::process::Stdio::null())
                 .stdout(logf.try_clone().unwrap())
                 .stderr(logf)
-                .process_group(0)
                 .kill_on_drop(true);
+            crate::os::new_group(&mut cmd);
             match cmd.spawn() {
                 Ok(ch) => {
                     let pid = ch.id();

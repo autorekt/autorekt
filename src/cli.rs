@@ -98,7 +98,7 @@ Message templates: {{value}} {{rhs}} {{name}} {{expr}} {{time}} {{labels.KEY}}.
 Hook environment: AUTOREKT_RULE AUTOREKT_MESSAGE AUTOREKT_VALUE AUTOREKT_RHS AUTOREKT_TIME
 AUTOREKT_SEVERITY AUTOREKT_EXPR AUTOREKT_CONTEXT (recent candles) AUTOREKT_CHART_URL AUTOREKT_LABEL_<KEY>.";
 
-const DAEMON_HELP: &str = "Actions: status (default) start stop restart logs [MONITOR] install (systemd user service)
+const DAEMON_HELP: &str = "Actions: status (default) start stop restart logs [MONITOR] install (systemd user service, Linux)
 run (foreground) tunnel (download cloudflared for --share links).
 
 Files in $AUTOREKT_HOME (default ~/.autorekt): config.yaml, aliases.yaml (ALIAS: id), rules/,
@@ -277,7 +277,7 @@ pub struct WatchArgs {
     /// Message template.
     #[arg(long)]
     pub message: Option<String>,
-    /// Shell command run when the rule fires.
+    /// Command run when the rule fires (by sh on Unix, cmd on Windows).
     #[arg(long)]
     pub hook: Option<String>,
     /// Severity of the rule's events, 0-3 (default 2).

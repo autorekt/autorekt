@@ -27,11 +27,11 @@ async fn service(cmd: &str, g: &Global) -> Result<()> {
             Ok(())
         }
         "stop" => {
-            println!("{}", if daemon::stop()? { "stopped" } else { "not running" });
+            println!("{}", if daemon::stop().await? { "stopped" } else { "not running" });
             Ok(())
         }
         "restart" => {
-            daemon::stop()?;
+            daemon::stop().await?;
             let i = daemon::ensure().await?;
             println!("daemon running: pid {} port {}", i.pid, i.port);
             Ok(())
@@ -60,8 +60,11 @@ async fn service(cmd: &str, g: &Global) -> Result<()> {
             Ok(())
         }
         "install" => {
+            if std::env::consts::OS != "linux" {
+                bail!("`daemon install` sets up a systemd user service, which exists only on Linux; elsewhere the daemon starts by itself when a command needs it");
+            }
             let exe = std::env::current_exe()?;
-            let dir = std::path::PathBuf::from(std::env::var("HOME")?).join(".config/systemd/user");
+            let dir = std::env::home_dir().context("no home directory")?.join(".config/systemd/user");
             std::fs::create_dir_all(&dir)?;
             let unit = format!(
                 "[Unit]\nDescription=autorekt daemon\nAfter=network-online.target\n\n[Service]\nExecStart={} daemon run\nRestart=on-failure\nRestartSec=5\nEnvironment=AUTOREKT_HOME={}\n\n[Install]\nWantedBy=default.target\n",
@@ -71,7 +74,7 @@ async fn service(cmd: &str, g: &Global) -> Result<()> {
             let p = dir.join("autorekt.service");
             std::fs::write(&p, unit)?;
             println!("wrote {}", p.display());
-            daemon::stop()?;
+            daemon::stop().await?;
             let st = std::process::Command::new("systemctl").args(["--user", "daemon-reload"]).status();
             let st2 = std::process::Command::new("systemctl").args(["--user", "enable", "--now", "autorekt.service"]).status();
             match (st, st2) {

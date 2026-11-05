@@ -108,11 +108,12 @@ pub(super) async fn public_url(st: &St, port: u16, tunnel: Option<bool>, path: &
 }
 
 pub fn cloudflared_path() -> Option<PathBuf> {
-    let local = config::home().join("bin").join("cloudflared");
+    let name = format!("cloudflared{}", std::env::consts::EXE_SUFFIX);
+    let local = config::home().join("bin").join(&name);
     if local.exists() {
         return Some(local);
     }
-    std::env::var("PATH").ok()?.split(':').map(|d| PathBuf::from(d).join("cloudflared")).find(|p| p.exists())
+    std::env::split_paths(&std::env::var_os("PATH")?).map(|d| d.join(&name)).find(|p| p.exists())
 }
 
 pub(super) async fn start_tunnel(st: &St, port: u16) -> Result<String> {

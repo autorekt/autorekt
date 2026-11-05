@@ -19,9 +19,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::Mutex;
-use std::io::Read;
 use std::io::Write;
-use std::os::unix::process::CommandExt;
 
 mod api;
 mod loops;
@@ -60,14 +58,10 @@ pub fn read_info() -> Option<Info> {
     serde_json::from_str(&t).ok()
 }
 
-fn pid_alive(pid: u32) -> bool {
-    unsafe { libc::kill(pid as i32, 0) == 0 }
-}
-
 /// The running daemon's info, if it is alive.
 pub fn running() -> Option<Info> {
     let i = read_info()?;
-    pid_alive(i.pid).then_some(i)
+    crate::os::alive(i.pid).then_some(i)
 }
 
 /// Start the daemon in the background if it is not running. Returns its info.
@@ -80,12 +74,7 @@ pub async fn ensure() -> Result<Info> {
     let log = std::fs::OpenOptions::new().create(true).append(true).open(logs().join("daemon.log"))?;
     let mut cmd = std::process::Command::new(exe);
     cmd.args(["daemon", "run"]).stdin(std::process::Stdio::null()).stdout(log.try_clone()?).stderr(log);
-    unsafe {
-        cmd.pre_exec(|| {
-            libc::setsid();
-            Ok(())
-        });
-    }
+    crate::os::detach(&mut cmd);
     cmd.spawn().context("starting daemon")?;
     for _ in 0..50 {
         tokio::time::sleep(Duration::from_millis(100)).await;
@@ -98,14 +87,12 @@ pub async fn ensure() -> Result<Info> {
     bail!("daemon did not start; see {}", logs().join("daemon.log").display())
 }
 
-pub fn stop() -> Result<bool> {
+pub async fn stop() -> Result<bool> {
     match running() {
         Some(i) => {
-            unsafe {
-                libc::kill(i.pid as i32, libc::SIGTERM);
-            }
+            api("shutdown", json!({})).await?;
             for _ in 0..30 {
-                if !pid_alive(i.pid) {
+                if !crate::os::alive(i.pid) {
                     break;
                 }
                 std::thread::sleep(Duration::from_millis(100));
@@ -142,6 +129,7 @@ struct Shared {
     cache: Mutex<HashMap<String, (i64, Value)>>,
     monitors: Mutex<HashMap<String, MonitorState>>,
     tunnel: Mutex<Option<tokio::process::Child>>,
+    shutdown: tokio::sync::Notify,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -157,9 +145,7 @@ type St = Arc<Shared>;
 
 fn rand_token(n: usize) -> String {
     let mut buf = vec![0u8; n];
-    if let Ok(mut f) = std::fs::File::open("/dev/urandom") {
-        let _ = f.read_exact(&mut buf);
-    }
+    getrandom::getrandom(&mut buf).expect("system random number generator");
     buf.iter().map(|b| format!("{b:02x}")).collect()
 }
 
@@ -189,6 +175,7 @@ pub async fn run() -> Result<()> {
         cache: Mutex::new(HashMap::new()),
         monitors: Mutex::new(HashMap::new()),
         tunnel: Mutex::new(None),
+        shutdown: tokio::sync::Notify::new(),
     });
     log(&format!("daemon started pid={} port={}", info.pid, port));
 
@@ -201,6 +188,7 @@ pub async fn run() -> Result<()> {
         .route("/api/event", post(api_event))
         .route("/api/share", post(api_share))
         .route("/api/report", post(api_report))
+        .route("/api/shutdown", post(api_shutdown))
         .route("/r/:token", get(report_page))
         .route("/c/:token", get(chart_page))
         .route("/c/:token/data", get(chart_data))
@@ -212,18 +200,15 @@ pub async fn run() -> Result<()> {
     tokio::spawn(liquidation_loop());
     tokio::spawn(warm::warm_loop());
 
-    let shutdown = async {
-        let mut term = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate()).unwrap();
-        let mut int = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::interrupt()).unwrap();
-        tokio::select! { _ = term.recv() => {}, _ = int.recv() => {} }
+    let st2 = st.clone();
+    let shutdown = async move {
+        tokio::select! { _ = crate::os::stop_requested() => {}, _ = st2.shutdown.notified() => {} }
     };
     axum::serve(listener, app).with_graceful_shutdown(shutdown).await?;
     // Cleanup: stop monitors and tunnel.
     for (_, m) in st.monitors.lock().await.iter() {
         if let Some(pid) = m.pid {
-            unsafe {
-                libc::kill(-(pid as i32), libc::SIGTERM);
-            }
+            crate::os::end_group(pid);
         }
     }
     if let Some(mut t) = st.tunnel.lock().await.take() {

@@ -2,7 +2,6 @@
 //! tunnel); `daemon tunnel` installs cloudflared.
 
 use super::*;
-use std::os::unix::fs::PermissionsExt;
 
 /// Publish `s` as an interactive chart; prints the public (or with `local`, local) URL.
 pub async fn share(s: &view::Series, overlay: &[String], ttl: &str, local: bool, g: &Global) -> Result<()> {
@@ -37,18 +36,19 @@ pub async fn install_cloudflared() -> Result<()> {
         "aarch64" => "arm64",
         a => bail!("no cloudflared build known for {a}; install it yourself"),
     };
-    let os = std::env::consts::OS;
-    if os != "linux" {
-        bail!("on {os}, install cloudflared with your package manager (e.g. brew install cloudflared)");
-    }
-    let url = format!("https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-{arch}");
+    let file = match std::env::consts::OS {
+        "linux" => format!("cloudflared-linux-{arch}"),
+        "windows" if arch == "amd64" => "cloudflared-windows-amd64.exe".into(),
+        os => bail!("no cloudflared download known for {os} on {arch}; install it with your package manager (e.g. brew install cloudflared)"),
+    };
+    let url = format!("https://github.com/cloudflare/cloudflared/releases/latest/download/{file}");
     println!("downloading {url}");
     let bytes = crate::http::client().get(&url).timeout(std::time::Duration::from_secs(300)).send().await?.error_for_status()?.bytes().await?;
     let dir = config::home().join("bin");
     std::fs::create_dir_all(&dir)?;
-    let p = dir.join("cloudflared");
+    let p = dir.join(format!("cloudflared{}", std::env::consts::EXE_SUFFIX));
     std::fs::write(&p, &bytes)?;
-    std::fs::set_permissions(&p, std::fs::Permissions::from_mode(0o755))?;
+    crate::os::make_executable(&p)?;
     println!("installed {} ({} MB)", p.display(), bytes.len() / 1_000_000);
     Ok(())
 }

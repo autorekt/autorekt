@@ -9,6 +9,7 @@ mod freshness;
 mod http;
 mod ids;
 mod model;
+mod os;
 mod providers;
 mod render;
 mod rules;
