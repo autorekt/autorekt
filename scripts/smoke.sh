@@ -4,12 +4,17 @@
 set -u
 BIN=${1:-target/release/autorekt}
 export AUTOREKT_HOME=$(mktemp -d)
-pass=0; fail=0
+pass=0; fail=0; net=0
+# A source that cannot be reached, refuses this network or rate-limits it is not a bug in
+# autorekt: such checks pass and are listed as network problems. Anything else that misses
+# the expected output fails.
+NETWORK='cannot reach|error sending request|timed out|HTTP 403|HTTP 405|HTTP 429|HTTP 451|HTTP 5[0-9][0-9]|geo-restricted|access denied'
 check() {  # check "<description>" <expected substring> <command...>
   local desc=$1 want=$2; shift 2
   local out
   if [ "$1" = cat-file ]; then out=$(cat "$2"); else out=$("$BIN" "$@" 2>&1); fi
   if [[ "$out" == *"$want"* ]]; then pass=$((pass+1)); printf 'ok    %s\n' "$desc"
+  elif echo "$out" | grep -Eq "$NETWORK"; then net=$((net+1)); printf 'net   %s\n      %s\n' "$desc" "$(echo "$out" | grep -Eo ".{0,60}($NETWORK).{0,60}" | head -1)"
   else fail=$((fail+1)); printf 'FAIL  %s\n      wanted "%s" in: %s\n' "$desc" "$want" "$(echo "$out" | head -3)"; fi
 }
 check "search resolves alias"   "okx:BTC/USDT:USDT"   search BTC --kind instruments -n 2
@@ -63,5 +68,5 @@ check "why correlations"        "correlation"         why BTC ETH -r 30d
 check "why breaks"              "breaks:"             why BTC ETH GOLD -r 60d
 "$BIN" daemon stop >/dev/null 2>&1
 rm -rf "$AUTOREKT_HOME"
-echo "passed $pass, failed $fail"
+echo "passed $pass, network problems $net, failed $fail"
 [ "$fail" -eq 0 ]

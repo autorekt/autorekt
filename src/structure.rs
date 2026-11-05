@@ -2,7 +2,7 @@
 //! (zigzag), price levels that swings keep returning to, trend state, range statistics, and
 //! data-quality checks. Nothing here knows which instrument it is looking at.
 
-use crate::model::{Bar, Timeframe};
+use crate::model::Bar;
 use serde::Serialize;
 
 /// Average true range over the last `n` bars.
@@ -164,7 +164,7 @@ pub fn atr_percentile(bars: &[Bar]) -> Option<f64> {
 }
 
 /// Things that make a series untrustworthy, described in words.
-pub fn quality(bars: &[Bar], tf: Timeframe, now: i64) -> Vec<String> {
+pub fn quality(bars: &[Bar]) -> Vec<String> {
     let mut out = Vec::new();
     let ohlc: Vec<&Bar> = bars.iter().filter(|b| b.high > b.low).collect();
     if ohlc.len() >= 10 {
@@ -180,12 +180,6 @@ pub fn quality(bars: &[Bar], tf: Timeframe, now: i64) -> Vec<String> {
         let outliers = bars.iter().filter(|b| b.high - b.low > 8.0 * median).count();
         if outliers > 0 {
             out.push(format!("{outliers} bar(s) span more than 8x the median range"));
-        }
-    }
-    if let Some(last) = bars.last() {
-        let age = now - (last.timestamp + tf.ms());
-        if age > 3 * tf.ms().max(3_600_000) && age > 4 * 86_400_000 {
-            out.push(format!("no new bar for {} days", age / 86_400_000));
         }
     }
     out
@@ -224,13 +218,12 @@ mod tests {
     }
 
     #[test]
-    fn quality_flags_flat_bodies_and_staleness() {
+    fn quality_flags_flat_bodies() {
         let day = 86_400_000;
         let bars: Vec<Bar> = (0..20).map(|i| Bar { timestamp: i * day, open: 1.0, high: 1.2, low: 0.9, close: 1.0, volume: 0.0, closed: true }).collect();
-        let q = quality(&bars, Timeframe::D1, 40 * day);
+        let q = quality(&bars);
         assert!(q.iter().any(|s| s.contains("open equals close on 20 of 20")), "{q:?}");
-        assert!(q.iter().any(|s| s.contains("no new bar for 20 days")), "{q:?}");
-        assert!(quality(&bars[..5], Timeframe::D1, 5 * day).is_empty());
+        assert!(quality(&bars[..5]).is_empty());
     }
 
     #[test]

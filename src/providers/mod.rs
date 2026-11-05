@@ -90,10 +90,12 @@ pub fn day_ms(d: chrono::NaiveDate) -> i64 {
     d.and_hms_opt(0, 0, 0).unwrap().and_utc().timestamp_millis()
 }
 
-/// Start time a daily or weekly point series needs to cover `limit` bars of `tf` (business
-/// days are about 2/3 of calendar days, plus a week of slack for holidays).
+/// Start time a daily or weekly point series needs to cover `limit` bars of `tf`: business
+/// days are about 2/3 of calendar days, and a week of slack covers holidays (or, for intraday
+/// bars of a daily series, the latest few points).
 pub fn lookback(tf: Timeframe, range: Range) -> i64 {
-    range.start.unwrap_or_else(|| range.end_ms() - tf.ms().max(DAY_MS) * range.limit as i64 * 3 / 2 - 7 * DAY_MS)
+    let span = tf.ms() * range.limit as i64;
+    range.start.unwrap_or_else(|| range.end_ms() - if tf.ms() >= DAY_MS { span * 3 / 2 } else { span } - 7 * DAY_MS)
 }
 
 /// Bars for a point series (one value per day or week), resampled to coarser timeframes.
@@ -200,39 +202,85 @@ pub fn all() -> Vec<Box<dyn Provider>> {
         .collect()
 }
 
-/// Fetch bars for any id. For a `#metric` id, metric points are returned as flat bars so that
-/// every series can be charted and evaluated the same way.
-pub async fn ohlcv(id: &InstrumentId, tf: Timeframe, range: Range) -> Result<Vec<Bar>> {
-    // Short-lived cache for "latest N bars" requests, so rules and boards sharing a series
-    // (and daily series re-checked every minute) do not refetch it.
-    if range.start.is_none() && range.end.is_none() {
-        let ttl = match tf.secs {
-            s if s <= 60 => 8_000,
-            s if s <= 900 => 20_000,
-            s if s < 86400 => 45_000,
-            _ => 300_000,
-        };
-        let key = format!("{id}|{}|{}", tf.secs, range.limit);
-        {
-            let c = CACHE.lock().unwrap();
-            if let Some((t, bars)) = c.get(&key) {
-                if now_ms() - t < ttl {
-                    return Ok(bars.clone());
-                }
+/// How long a fetch stays fresh enough to answer from the local store.
+pub fn ttl_ms(id: &InstrumentId, tf: Timeframe) -> i64 {
+    match id.provider.as_str() {
+        "okx" | "binance" | "hyperliquid" | "coinbase" | "deribit" => {
+            if tf.secs < 3600 {
+                10_000
+            } else {
+                30_000
             }
         }
-        let bars = ohlcv_uncached(id, tf, range).await?;
-        let mut c = CACHE.lock().unwrap();
-        if c.len() > 500 {
-            c.retain(|_, (t, _)| now_ms() - *t < 600_000);
-        }
-        c.insert(key, (now_ms(), bars.clone()));
-        return Ok(bars);
+        "polymarket" | "kalshi" => 60_000,
+        "yahoo" if tf.secs < 86400 => 120_000,
+        "yahoo" => 600_000,
+        _ => 1_800_000,
     }
-    ohlcv_uncached(id, tf, range).await
 }
 
-static CACHE: std::sync::LazyLock<std::sync::Mutex<std::collections::HashMap<String, (i64, Vec<Bar>)>>> = std::sync::LazyLock::new(Default::default);
+static ISSUES: std::sync::LazyLock<std::sync::Mutex<Vec<String>>> = std::sync::LazyLock::new(Default::default);
+
+/// Record something the reader should know about the data shown (once per message).
+pub fn note_issue(msg: String) {
+    let mut v = ISSUES.lock().unwrap();
+    if !v.contains(&msg) {
+        v.push(msg);
+    }
+}
+
+/// The notes recorded so far, emptied.
+pub fn take_issues() -> Vec<String> {
+    std::mem::take(&mut *ISSUES.lock().unwrap())
+}
+
+fn first_line(e: &anyhow::Error) -> String {
+    e.to_string().lines().next().unwrap_or("").to_string()
+}
+
+/// Fetch bars for any id. For a `#metric` id, metric points are returned as flat bars so that
+/// every series can be charted and evaluated the same way. "Latest N bars" requests go through
+/// the local store: a recent enough fetch is answered from it, and when a live fetch fails the
+/// stored bars are served with a note saying how old they are.
+pub async fn ohlcv(id: &InstrumentId, tf: Timeframe, range: Range) -> Result<Vec<Bar>> {
+    if range.start.is_some() || range.end.is_some() || id.provider == "local" {
+        return ohlcv_uncached(id, tf, range).await;
+    }
+    let name = id.to_string();
+    let key = format!("{name}|{}", tf.secs);
+    let fetched = {
+        let c = crate::store::open()?;
+        crate::store::want(&c, &name, now_ms())?;
+        let f = crate::store::fetch_state(&c, &key)?;
+        if f.ok_at.is_some_and(|t| now_ms() - t < ttl_ms(id, tf)) && f.n >= range.limit {
+            let bars = crate::store::load_bars(&c, &name, tf.secs, range.limit)?;
+            if !bars.is_empty() {
+                return Ok(bars);
+            }
+        }
+        f.ok_at
+    };
+    let live = ohlcv_uncached(id, tf, range).await;
+    let c = crate::store::open()?;
+    match live {
+        Ok(bars) => {
+            crate::store::save_bars(&c, &name, tf.secs, &bars)?;
+            crate::store::fetch_ok(&c, &key, now_ms(), range.limit)?;
+            Ok(bars)
+        }
+        Err(e) => {
+            crate::store::fetch_err(&c, &key, now_ms(), &first_line(&e))?;
+            let stored = crate::store::load_bars(&c, &name, tf.secs, range.limit)?;
+            match fetched {
+                Some(t) if !stored.is_empty() => {
+                    note_issue(format!("{name}: live fetch failed ({}); showing what was fetched {} ago", first_line(&e), crate::freshness::age_text(now_ms() - t)));
+                    Ok(stored)
+                }
+                _ => Err(e),
+            }
+        }
+    }
+}
 
 async fn ohlcv_uncached(id: &InstrumentId, tf: Timeframe, range: Range) -> Result<Vec<Bar>> {
     let p = get(&id.provider)?;
@@ -245,7 +293,45 @@ async fn ohlcv_uncached(id: &InstrumentId, tf: Timeframe, range: Range) -> Resul
     }
 }
 
+/// A quote for any id, through the local store like `ohlcv`.
 pub async fn ticker(id: &InstrumentId) -> Result<Ticker> {
+    if id.provider == "local" {
+        return ticker_uncached(id).await;
+    }
+    let name = id.to_string();
+    let key = format!("{name}|ticker");
+    let fetched = {
+        let c = crate::store::open()?;
+        let f = crate::store::fetch_state(&c, &key)?;
+        if f.ok_at.is_some_and(|t| now_ms() - t < ttl_ms(id, Timeframe::H1)) {
+            if let Some(t) = crate::store::load_ticker(&c, &name)? {
+                return Ok(t);
+            }
+        }
+        f.ok_at
+    };
+    let live = ticker_uncached(id).await;
+    let c = crate::store::open()?;
+    match live {
+        Ok(t) => {
+            crate::store::save_ticker(&c, &name, &t)?;
+            crate::store::fetch_ok(&c, &key, now_ms(), 1)?;
+            Ok(t)
+        }
+        Err(e) => {
+            crate::store::fetch_err(&c, &key, now_ms(), &first_line(&e))?;
+            match (fetched, crate::store::load_ticker(&c, &name)?) {
+                (Some(at), Some(t)) => {
+                    note_issue(format!("{name}: live quote failed ({}); showing the quote fetched {} ago", first_line(&e), crate::freshness::age_text(now_ms() - at)));
+                    Ok(t)
+                }
+                _ => Err(e),
+            }
+        }
+    }
+}
+
+async fn ticker_uncached(id: &InstrumentId) -> Result<Ticker> {
     let p = get(&id.provider)?;
     match &id.metric {
         None => {

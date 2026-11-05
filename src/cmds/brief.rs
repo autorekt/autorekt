@@ -5,27 +5,7 @@ use super::*;
 use crate::providers::{kalshi, news};
 
 pub async fn brief(hours: i64, g: &Global, o: &Opts) -> Result<()> {
-    let main_ids = config::default_board();
-    let fear_ids: Vec<String> = ["VIX9D", "VIX", "VIX3M", "VVIX", "MOVE", "OVX", "DVOL", "CNNFNG", "FNG", "SPX_GEX", "cboe:SPX#skew_25d", "cboe:SPX#put_call_volume", "cboe:SPX#zero_dte_pct"].iter().map(|s| s.to_string()).collect();
-    let liq_ids: Vec<String> = [
-        "nyfed:SOFR - fred:IORB", "nyfed:SOFR#p99 - fred:IORB", "(dtcc:SOFR10Y - fred:DGS10) * 100", "(dtcc:SOFR30Y - fred:DGS30) * 100", "SRF", "RRP", "RESERVES", "TGA",
-        "DEALER_UST", "HYOAS", "IGOAS", "NFCI", "STABLES",
-    ]
-    .iter()
-    .map(|s| s.to_string())
-    .collect();
-    let mut world_ids: Vec<String> = ["US10Y", "SWAP10Y", "EA10Y", "JGB10Y", "JGB30Y", "CGB10Y", "CNYFIX", config::CNH_FIX_GAP, "SHIBOR3M", "CN_MARGIN", "SOUTHBOUND", "HIBOR", "HK_AGGBAL"]
-        .iter()
-        .map(|s| s.to_string())
-        .collect();
-    world_ids.extend(config::fed_funds_strip(3));
-    let crypto_ids: Vec<String> = [
-        "BTC#funding_rate", "BTC#open_interest", "BTC#long_short_ratio", "BTC#top_long_short_ratio", "BTC#taker_buy_sell_ratio",
-        "ETH#funding_rate", "deribit:BTC#skew_10pct", "deribit:BTC#put_call_volume", "CB_PREMIUM_BP|(coinbase:BTC/USD / okx:BTC/USDT - 1) * 10000", "BTC_ETF_FLOW", "ETH_ETF_FLOW",
-    ]
-    .iter()
-    .map(|s| s.to_string())
-    .collect();
+    let config::Sections { main: main_ids, fear: fear_ids, liq: liq_ids, world: world_ids, crypto: crypto_ids } = config::brief_sections();
     let odds_cfg = config::get().brief_odds.clone().unwrap_or_else(|| vec!["series:KXFEDDECISION".into()]);
     let odds_f = async {
         let mut out = Vec::new();
@@ -63,11 +43,25 @@ pub async fn brief(hours: i64, g: &Global, o: &Opts) -> Result<()> {
     let liq = board::build(&liq_plain).await;
     let mut spreads = Vec::new();
     for e in &liq_expr {
-        if let Ok((g_, v)) = expr::evaluate(e, Timeframe::D1, Range::last(40)).await {
+        let r = tokio::time::timeout(std::time::Duration::from_secs(20), expr::evaluate(e, Timeframe::D1, Range::last(board::daily_points(e)))).await;
+        let (g_, v) = match r {
+            Ok(Ok(x)) => x,
+            Ok(Err(err)) => {
+                providers::note_issue(format!("missing {e}: {}", err.to_string().lines().next().unwrap_or("")));
+                continue;
+            }
+            Err(_) => {
+                providers::note_issue(format!("missing {e}: not ready after 20s (still downloading; the daemon keeps fetching it, try again shortly)"));
+                continue;
+            }
+        };
+        {
             let pts: Vec<(i64, f64)> = g_.into_iter().zip(v).filter(|(_, x)| x.is_finite()).collect();
             if let Some(last) = pts.last() {
                 let wk = pts.iter().rev().find(|p| p.0 <= last.0 - 7 * 86_400_000).map(|p| p.1);
-                spreads.push((e.clone(), last.1, wk, pts.iter().map(|p| p.1).collect::<Vec<_>>()));
+                let bars: Vec<Bar> = pts.iter().map(|p| Bar::point(p.0, p.1)).collect();
+                let age = crate::freshness::assess_points(&bars, now_ms()).map(|f| f.label()).unwrap_or_default();
+                spreads.push((e.clone(), last.1, wk, pts.iter().map(|p| p.1).collect::<Vec<_>>(), age));
             }
         }
     }
@@ -83,7 +77,7 @@ pub async fn brief(hours: i64, g: &Global, o: &Opts) -> Result<()> {
     if g.json {
         return print_json(&json!({
             "time": now, "board": main, "fear": fear, "liquidity": liq, "global_rates": world,
-            "spreads": spreads.iter().map(|s| json!({"expr": s.0, "last": s.1, "week_ago": s.2})).collect::<Vec<_>>(),
+            "spreads": spreads.iter().map(|s| json!({"expr": s.0, "last": s.1, "week_ago": s.2, "age": s.4})).collect::<Vec<_>>(),
             "crypto_positioning": crypto, "odds": odds, "calendar": cal, "headlines": headlines,
             "events": local.iter().map(|(_, e, _)| e).collect::<Vec<_>>(),
         }));
@@ -112,13 +106,14 @@ pub async fn brief(hours: i64, g: &Global, o: &Opts) -> Result<()> {
         println!("SPX dealer gamma {g:+.1} $bn per 1% move → {}", if g >= 0.0 { "dealers dampen moves" } else { "dealers amplify moves" });
     }
     println!("\n## 3. Dollar liquidity (NY Fed same day; FRED, DTCC and Treasury lag 1-5 days)");
-    for (e, last, wk, hist) in &spreads {
+    for (e, last, wk, hist, age) in &spreads {
         let read = if e.contains("IORB") {
             if *last > 0.0 { "repo above IORB: reserves tight" } else { "repo below IORB: reserves ample" }
         } else {
             "swap spread, bp: more negative = dealers' balance sheets strained by Treasury supply"
         };
-        println!("{:<36} {:+.3}  (1w ago {})  {}  {}", e, last, wk.map(|w| format!("{w:+.3}")).unwrap_or("-".into()), render::spark(&render::squeeze(hist, 24), o.ascii), read);
+        let age = if age.is_empty() { String::new() } else { format!("  [{age}]") };
+        println!("{:<36} {:+.3}  (1w ago {})  {}  {read}{age}", e, last, wk.map(|w| format!("{w:+.3}")).unwrap_or("-".into()), render::spark(&render::squeeze(hist, 24), o.ascii));
     }
     print!("{}", board::render("liquidity", &liq, o).lines().skip(1).map(|l| format!("{l}\n")).collect::<String>());
     println!("\n## 4. Global rates, China and Hong Kong (fed funds futures = implied average rate per month)");

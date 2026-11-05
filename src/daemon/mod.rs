@@ -27,6 +27,7 @@ mod api;
 mod loops;
 mod report;
 mod share;
+mod warm;
 
 use api::*;
 use loops::*;
@@ -209,6 +210,7 @@ pub async fn run() -> Result<()> {
     tokio::spawn(monitor_loop(st.clone()));
     tokio::spawn(record_loop());
     tokio::spawn(liquidation_loop());
+    tokio::spawn(warm::warm_loop());
 
     let shutdown = async {
         let mut term = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate()).unwrap();

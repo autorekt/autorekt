@@ -3,6 +3,7 @@
 
 use super::*;
 use crate::providers::news as feeds;
+use crate::freshness;
 use crate::render::{candles as candle_view, series};
 
 /// One series request: an id or expression with timeframe and window.
@@ -98,6 +99,9 @@ pub async fn chart(s: &Series, g: &Global, o: &Opts) -> Result<()> {
         Some(id) => {
             let step = bars.windows(2).map(|w| w[1].timestamp - w[0].timestamp).min().unwrap_or(tf.ms()).max(1);
             print!("{}", series::line(&id.to_string(), unit_label(id), &bars, step, 24, &extra, o));
+            if let (Some(last), None) = (bars.last(), &s.at) {
+                print!("{}", latest_line(&freshness::assess(id, &bars, last.timestamp, false, now_ms()), last.timestamp, o));
+            }
         }
         None => print!("{}", series::line(&s.id, "expression", &bars, tf.ms(), 24, &extra, o)),
     }
@@ -108,8 +112,11 @@ pub async fn chart(s: &Series, g: &Global, o: &Opts) -> Result<()> {
 }
 
 async fn candles(id: &ids::InstrumentId, s: &Series, tf: Timeframe, bars: &[Bar], extra: &[render::Column], o: &Opts) -> Result<()> {
+    let mut latest = None;
     if s.at.is_none() {
         let t = providers::ticker(id).await.with_context(|| format!("quote for {id}"))?;
+        let closed = t.notes.iter().any(|n| n.contains("closed"));
+        latest = Some((freshness::assess(id, bars, t.timestamp, closed, now_ms()), t.timestamp));
         print!("{}", series::quotes(&[(ids::label(id), Ok(t))], o));
     }
     let evs = if s.news {
@@ -122,7 +129,16 @@ async fn candles(id: &ids::InstrumentId, s: &Series, tf: Timeframe, bars: &[Bar]
     let notes = providers::get(&id.provider)?.notes(&id.symbol);
     let title = if ids::label(id) != id.to_string() { format!("{} ({})", id, ids::label(id)) } else { id.to_string() };
     print!("{}", candle_view::render(&candle_view::CandleView { title, tf_label: tf.to_string(), bars, step_ms: tf.ms(), notes, events: &evs, extra }, o));
+    if let Some((f, t)) = latest {
+        print!("{}", latest_line(&f, t, o));
+    }
     Ok(())
+}
+
+/// When the latest value is from, and whether that is late for this series.
+fn latest_line(f: &freshness::Freshness, t: i64, o: &Opts) -> String {
+    let label = f.label();
+    format!("latest  {} {}  ({})\n", o.full_time(t), o.tz_name(), if label.is_empty() { "live" } else { &label })
 }
 
 /// A prediction market or event: outcomes, then the history of a single market.
