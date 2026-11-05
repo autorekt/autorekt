@@ -199,6 +199,10 @@ wait for my go-ahead. Then build from the audited source with `cargo build --rel
 Rust toolchain the usual way if needed), put the binary on PATH, and check it with `autorekt show`.
 ```
 
+Agents that load skills, such as Claude Code, can also take
+[skills/autorekt/SKILL.md](https://github.com/autorekt/autorekt/blob/main/skills/autorekt/SKILL.md), which tells
+them when and how to reach for autorekt.
+
 autorekt observes; it never trades. It works with any agent that can run a shell command. Free
 data only, fetched from public endpoints on your own machine: no accounts, no API keys.
 

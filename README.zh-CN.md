@@ -181,6 +181,8 @@ caveats: Yahoo and Cboe are ~15m delayed; SPX gamma assumes dealers long calls a
 放到 PATH 上，再运行 `autorekt show` 确认能用。
 ```
 
+支持技能（skill）的 agent，比如 Claude Code，还可以加载 [skills/autorekt/SKILL.md](https://github.com/autorekt/autorekt/blob/main/skills/autorekt/SKILL.md)，它会告诉 agent 什么时候、怎样使用 autorekt。
+
 autorekt 只观察，从不交易，任何能执行 shell 命令的 agent 都能用。只用免费数据，在你自己的机器上从公开接口获取：不需要注册账号，也不需要 API 密钥。
 
 ## 瓶颈在数据，不在智力
