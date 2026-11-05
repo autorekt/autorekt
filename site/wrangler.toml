@@ -1,5 +1,5 @@
-# autorekt.com: a static site served by Cloudflare Workers static assets, built from README.md.
-# Deployed by .github/workflows/site.yml on every push to main that touches site/ or README.md;
+# autorekt.com: a static site served by Cloudflare Workers static assets, built from the READMEs.
+# Deployed by .github/workflows/site.yml on every push to main that touches site/ or a README;
 # by hand: `npx wrangler deploy` from this directory after `npx wrangler login`.
 name = "autorekt-site"
 compatibility_date = "2026-10-01"

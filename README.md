@@ -1,5 +1,7 @@
 # autorekt
 
+English | [简体中文](README.zh-CN.md)
+
 **Make your AI a Wall Street analyst.**
 
 Models are already geniuses in a data center. In markets, what holds them back is what they can see.
