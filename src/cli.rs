@@ -17,7 +17,10 @@ const ABOUT: &str = "autorekt — market observation for agents. Start with: aut
 Ids are <provider>:<symbol>[#metric]:
   exchanges use CCXT symbols: okx:BTC/USDT:USDT (perp)  okx:BTC/USDT (spot)  hyperliquid:xyz:TSLA (24/7)
   others use native ids: yahoo:^VIX  yahoo:GC=F  fred:DGS10  polymarket:<slug>  kalshi:<TICKER>
-  aliases: BTC ETH SOL SPX NDX VIX MOVE DXY US10Y GOLD WTI HYG DVOL FNG CNNFNG COT_ES STABLES ...
+  funding & rates: nyfed:SOFR#p99 nyfed:SRF treasury:TGA treasury:AUCTION_10Y dtcc:SOFR10Y mof:JGB10Y ecb:EA10Y
+  China & HK: cfets:USDCNY cfets:SHIBOR_3M eastmoney:CGB10Y eastmoney:MARGIN eastmoney:SOUTHBOUND hkma:HIBOR_1M
+  positioning & flows: cboe:SPX#gex #skew_25d #put_call_volume #zero_dte_pct  farside:BTC (ETF flows)  cftc:13874A
+  aliases: BTC ETH SOL SPX NDX VIX MOVE DXY US10Y GOLD WTI HYG DVOL FNG CNNFNG COT_ES STABLES SWAP10Y JGB10Y CGB10Y CNYFIX SPX_GEX ...
   metrics: BTC#funding_rate #open_interest #long_short_ratio #taker_buy_sell_ratio #basis #liquidations
   expressions work wherever an id does: 'fred:SOFR - fred:IORB'  'ta.rsi(BTC, 14)'  'RSP / SPY'
 Timeframes: 1m 5m 15m 1h 4h 1d 1w.  Durations: 30m 6h 7d 90d.  Times: 2026-10-30T20:00:00Z";
@@ -52,8 +55,8 @@ A report chart block:
   RSP / SPY -i 1d -r 120d
   ```";
 
-const SEARCH_HELP: &str = "Searches instruments (OKX, Hyperliquid, Yahoo, CFTC), prediction markets (Polymarket,
-Kalshi) and news. Without a query: the sources and their status (--check probes them).
+const SEARCH_HELP: &str = "Searches instruments (OKX, Hyperliquid, Yahoo, CFTC and the statistics sources: nyfed,
+treasury, dtcc, cfets, eastmoney, mof, ecb, hkma, farside), prediction markets (Polymarket, Kalshi) and news. Without a query: the sources and their status (--check probes them).
 
 Examples:
   autorekt search fed december

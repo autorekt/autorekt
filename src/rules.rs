@@ -424,7 +424,8 @@ pub struct Firing {
 /// The tradable instrument whose forward returns judge a signal: the base instrument of a
 /// metric (BTC for BTC#funding_rate), the primary itself if it is tradable, else SPX.
 pub fn forward_ref(primary: &crate::ids::InstrumentId) -> crate::ids::InstrumentId {
-    let non_tradable = matches!(primary.provider.as_str(), "fred" | "alt" | "cftc" | "finra" | "llama" | "polymarket" | "kalshi" | "local")
+    let non_tradable = matches!(primary.provider.as_str(), "polymarket" | "kalshi")
+        || crate::ids::POINT_PROVIDERS.contains(&primary.provider.as_str())
         || primary.symbol.ends_with("-DVOL")
         || crate::ids::level_unit(&primary.base()).is_some();
     if primary.metric.is_some() && !non_tradable {

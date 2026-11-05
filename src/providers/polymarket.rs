@@ -76,16 +76,18 @@ impl Polymarket {
         };
         let token = o.token.clone().ok_or_else(|| anyhow::anyhow!("polymarket: no token id"))?;
         let fidelity = (tf.secs / 60).clamp(1, 1440);
-        let start = range.start_ms(tf) / 1000;
-        let end = range.end_ms() / 1000;
-        let v: Value = get_json(&format!("{CLOB}/prices-history?market={token}&startTs={start}&endTs={end}&fidelity={fidelity}")).await?;
-        let pts = v["history"]
-            .as_array()
-            .cloned()
-            .unwrap_or_default()
-            .iter()
-            .filter_map(|p| Some(MetricPoint { timestamp: p["t"].as_i64()? * 1000, value: num(&p["p"])? }))
-            .collect();
+        let (start, end) = (range.start_ms(tf) / 1000, range.end_ms() / 1000);
+        // The history endpoint rejects windows longer than 15 days; ask for 14-day pieces.
+        const WINDOW: i64 = 14 * 86_400;
+        let pieces = (start..end).step_by(WINDOW as usize).map(|s| {
+            let url = format!("{CLOB}/prices-history?market={token}&startTs={s}&endTs={}&fidelity={fidelity}", (s + WINDOW).min(end));
+            async move { get_json::<Value>(&url).await }
+        });
+        let mut pts: Vec<MetricPoint> = Vec::new();
+        for v in futures::future::try_join_all(pieces).await? {
+            pts.extend(v["history"].as_array().into_iter().flatten().filter_map(|p| Some(MetricPoint { timestamp: p["t"].as_i64()? * 1000, value: num(&p["p"])? })));
+        }
+        pts.dedup_by_key(|p| p.timestamp);
         Ok(finish_metric(pts, range))
     }
 }

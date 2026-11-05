@@ -11,8 +11,13 @@ use std::collections::BTreeMap;
 use std::fmt;
 
 pub const PROVIDERS: &[&str] = &[
-    "okx", "binance", "hyperliquid", "deribit", "cftc", "finra", "llama", "bitget", "coinbase", "yahoo", "fred", "polymarket", "kalshi", "alt", "local",
+    "okx", "binance", "hyperliquid", "deribit", "cftc", "finra", "llama", "bitget", "coinbase", "yahoo", "fred", "nyfed", "treasury", "dtcc", "cboe", "cfets",
+    "eastmoney", "mof", "ecb", "hkma", "farside", "polymarket", "kalshi", "alt", "local",
 ];
+
+/// Providers of statistics with one value per day or week (rates, balances, flows, positioning),
+/// as opposed to tradable prices.
+pub const POINT_PROVIDERS: &[&str] = &["fred", "alt", "cftc", "finra", "llama", "local", "nyfed", "treasury", "dtcc", "cboe", "cfets", "eastmoney", "mof", "ecb", "hkma", "farside"];
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, PartialOrd, Ord)]
 pub struct InstrumentId {
@@ -111,7 +116,7 @@ pub fn default_aliases() -> BTreeMap<String, String> {
         ("US2Y", "fred:DGS2"), ("ZN", "yahoo:ZN=F"), ("ZB", "yahoo:ZB=F"), ("ZT", "yahoo:ZT=F"), ("TLT", "yahoo:TLT"),
         ("HYG", "yahoo:HYG"), ("LQD", "yahoo:LQD"), ("JNK", "yahoo:JNK"),
         ("HYOAS", "fred:BAMLH0A0HYM2"), ("IGOAS", "fred:BAMLC0A0CM"), ("SOFR", "fred:SOFR"), ("EFFR", "fred:EFFR"),
-        ("RRP", "fred:RRPONTSYD"), ("WALCL", "fred:WALCL"), ("TGA", "fred:WTREGEN"), ("RESERVES", "fred:WRESBAL"),
+        ("RRP", "fred:RRPONTSYD"), ("WALCL", "fred:WALCL"), ("TGA", "treasury:TGA"), ("RESERVES", "fred:WRESBAL"),
         ("T10Y2Y", "fred:T10Y2Y"), ("T10Y3M", "fred:T10Y3M"), ("NFCI", "fred:NFCI"), ("STLFSI", "fred:STLFSI4"),
         // FX
         ("DXY", "yahoo:DX-Y.NYB"), ("EURUSD", "yahoo:EURUSD=X"), ("USDJPY", "yahoo:JPY=X"), ("GBPUSD", "yahoo:GBPUSD=X"),
@@ -126,6 +131,17 @@ pub fn default_aliases() -> BTreeMap<String, String> {
         ("COT_ZB", "cftc:020601"), ("COT_GOLD", "cftc:088691"), ("COT_SILVER", "cftc:084691"), ("COT_COPPER", "cftc:085692"),
         ("COT_WTI", "cftc:067651"), ("COT_JPY", "cftc:097741"), ("COT_EUR", "cftc:099741"), ("COT_BTC", "cftc:133741"),
         ("COT_VIX", "cftc:1170E1"),
+        // Funding markets, swaps and global yields
+        ("SRF", "nyfed:SRF"), ("DEALER_UST", "nyfed:PDPOSGST-TOT"),
+        ("SWAP2Y", "dtcc:SOFR2Y"), ("SWAP5Y", "dtcc:SOFR5Y"), ("SWAP10Y", "dtcc:SOFR10Y"), ("SWAP30Y", "dtcc:SOFR30Y"),
+        ("JGB2Y", "mof:JGB2Y"), ("JGB10Y", "mof:JGB10Y"), ("JGB30Y", "mof:JGB30Y"), ("ESTR", "ecb:ESTR"), ("EA10Y", "ecb:EA10Y"),
+        // China and Hong Kong
+        ("CNYFIX", "cfets:USDCNY"), ("SHIBOR3M", "cfets:SHIBOR_3M"), ("CGB10Y", "eastmoney:CGB10Y"), ("CGB30Y", "eastmoney:CGB30Y"),
+        ("CN_MARGIN", "eastmoney:MARGIN"), ("SOUTHBOUND", "eastmoney:SOUTHBOUND"), ("CN_BREADTH", "eastmoney:BREADTH"),
+        ("HIBOR", "hkma:HIBOR_1M"), ("HK_AGGBAL", "hkma:AGGREGATE_BALANCE"),
+        // Options positioning, ETF flows, oil inventories, GDP nowcast
+        ("SPX_GEX", "cboe:SPX#gex"), ("BTC_ETF_FLOW", "farside:BTC"), ("ETH_ETF_FLOW", "farside:ETH"),
+        ("CRUDE_STOCKS", "fred:WCESTUS1"), ("GDPNOW", "fred:GDPNOW"),
         // 24/7 perps on Hyperliquid HIP-3 (trade while cash markets are closed)
         ("NDX247", "hyperliquid:xyz:XYZ100"), ("GOLD247", "hyperliquid:xyz:GOLD"),
         // Crypto proxies in TradFi
@@ -310,6 +326,10 @@ mod tests {
 pub fn level_unit(id: &InstrumentId) -> Option<&'static str> {
     if let Some(m) = &id.metric {
         return match m.as_str() {
+            "p1" | "p25" | "p75" | "p99" if id.provider == "nyfed" => Some("bp"),
+            "volume" | "accepted" | "turnover" | "financing" if matches!(id.provider.as_str(), "nyfed" | "treasury" | "eastmoney") => None,
+            "net_buy" => Some("CNYbn"),
+            _ if id.provider == "farside" => Some("$mn"),
             // Rates expressed as fractions per interval: show differences in basis points.
             "funding_rate" | "funding" | "premium" => Some("rbp"),
             "open_interest" | "oi" | "liquidations" | "liquidations_long" | "liquidations_short" => None,
@@ -337,6 +357,23 @@ pub fn level_unit(id: &InstrumentId) -> Option<&'static str> {
             "^VIX" | "^VIX9D" | "^VIX3M" | "^VVIX" | "^MOVE" | "^SKEW" | "^OVX" | "^GVZ" | "^VXN" => Some("pt"),
             _ => None,
         },
+        "nyfed" => match s {
+            "SRF" | "RRP" => Some("$bn"),
+            _ if s.starts_with("PD") => None,
+            _ => Some("bp"),
+        },
+        "treasury" => Some(if s == "TGA" { "$bn" } else { "bp" }),
+        "dtcc" | "mof" | "ecb" => Some("bp"),
+        "cfets" if s.starts_with("SHIBOR") => Some("bp"),
+        "eastmoney" => match s {
+            "MARGIN" | "NORTHBOUND" => None,
+            "SOUTHBOUND" => Some("CNYbn"),
+            "BREADTH" => Some("pt"),
+            _ => Some("bp"),
+        },
+        "hkma" if s.starts_with("HIBOR") => Some("bp"),
+        "farside" => Some("$mn"),
+        "cboe" => Some("pt"),
         "alt" => Some("pt"),
         "deribit" if s.ends_with("-DVOL") => Some("pt"),
         "polymarket" | "kalshi" => Some("pp"),
@@ -346,14 +383,23 @@ pub fn level_unit(id: &InstrumentId) -> Option<&'static str> {
     }
 }
 
-/// Known units for big FRED levels, for display.
+/// Units of levels that are not prices or percent rates, for display.
 pub fn unit_note(id: &InstrumentId) -> Option<&'static str> {
-    if id.provider != "fred" {
-        return None;
-    }
-    Some(match id.symbol.as_str() {
-        "WRESBAL" | "WTREGEN" | "WALCL" | "WLRRAL" | "WSHOTSL" => "USD mn",
-        "RRPONTSYD" | "RPONTSYD" => "USD bn",
+    let s = id.symbol.as_str();
+    Some(match (id.provider.as_str(), id.metric.as_deref()) {
+        ("fred", None) => match s {
+            "WRESBAL" | "WTREGEN" | "WALCL" | "WLRRAL" | "WSHOTSL" => "USD mn",
+            "RRPONTSYD" | "RPONTSYD" => "USD bn",
+            _ => return None,
+        },
+        ("nyfed", None) if s == "SRF" || s == "RRP" => "USD bn",
+        ("nyfed", None) if s.starts_with("PD") => "USD mn",
+        ("treasury", None) if s == "TGA" => "USD bn",
+        ("eastmoney", None) if matches!(s, "MARGIN" | "SOUTHBOUND" | "NORTHBOUND") => "CNY bn",
+        ("eastmoney", Some("financing" | "net_buy" | "turnover")) => "CNY bn",
+        ("hkma", None) if s == "AGGREGATE_BALANCE" => "HKD bn",
+        ("farside", _) => "USD mn",
+        ("cboe", None | Some("gex")) => "USD bn per 1% move",
         _ => return None,
     })
 }

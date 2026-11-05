@@ -23,7 +23,7 @@ pub struct BoardRow {
 }
 
 fn daily_only(id: &InstrumentId) -> bool {
-    matches!(id.provider.as_str(), "fred" | "alt" | "cftc" | "finra" | "llama")
+    ids::POINT_PROVIDERS.contains(&id.provider.as_str()) && id.provider != "local"
 }
 
 fn close_at_or_before(bars: &[Bar], t: i64) -> Option<f64> {

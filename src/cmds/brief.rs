@@ -6,11 +6,22 @@ use crate::providers::{kalshi, news};
 
 pub async fn brief(hours: i64, g: &Global, o: &Opts) -> Result<()> {
     let main_ids = config::default_board();
-    let fear_ids: Vec<String> = ["VIX9D", "VIX", "VIX3M", "VVIX", "MOVE", "OVX", "DVOL", "CNNFNG", "FNG"].iter().map(|s| s.to_string()).collect();
-    let liq_ids: Vec<String> = ["fred:SOFR - fred:IORB", "fred:SOFR99 - fred:IORB", "RRP", "RESERVES", "TGA", "HYOAS", "IGOAS", "NFCI", "STABLES"].iter().map(|s| s.to_string()).collect();
+    let fear_ids: Vec<String> = ["VIX9D", "VIX", "VIX3M", "VVIX", "MOVE", "OVX", "DVOL", "CNNFNG", "FNG", "SPX_GEX", "cboe:SPX#skew_25d", "cboe:SPX#put_call_volume", "cboe:SPX#zero_dte_pct"].iter().map(|s| s.to_string()).collect();
+    let liq_ids: Vec<String> = [
+        "nyfed:SOFR - fred:IORB", "nyfed:SOFR#p99 - fred:IORB", "(dtcc:SOFR10Y - fred:DGS10) * 100", "(dtcc:SOFR30Y - fred:DGS30) * 100", "SRF", "RRP", "RESERVES", "TGA",
+        "DEALER_UST", "HYOAS", "IGOAS", "NFCI", "STABLES",
+    ]
+    .iter()
+    .map(|s| s.to_string())
+    .collect();
+    let mut world_ids: Vec<String> = ["US10Y", "SWAP10Y", "EA10Y", "JGB10Y", "JGB30Y", "CGB10Y", "CNYFIX", config::CNH_FIX_GAP, "SHIBOR3M", "CN_MARGIN", "SOUTHBOUND", "HIBOR", "HK_AGGBAL"]
+        .iter()
+        .map(|s| s.to_string())
+        .collect();
+    world_ids.extend(config::fed_funds_strip(3));
     let crypto_ids: Vec<String> = [
         "BTC#funding_rate", "BTC#open_interest", "BTC#long_short_ratio", "BTC#top_long_short_ratio", "BTC#taker_buy_sell_ratio",
-        "ETH#funding_rate", "deribit:BTC#skew_10pct", "deribit:BTC#put_call_volume", "CB_PREMIUM_BP|(coinbase:BTC/USD / okx:BTC/USDT - 1) * 10000",
+        "ETH#funding_rate", "deribit:BTC#skew_10pct", "deribit:BTC#put_call_volume", "CB_PREMIUM_BP|(coinbase:BTC/USD / okx:BTC/USDT - 1) * 10000", "BTC_ETF_FLOW", "ETH_ETF_FLOW",
     ]
     .iter()
     .map(|s| s.to_string())
@@ -38,10 +49,11 @@ pub async fn brief(hours: i64, g: &Global, o: &Opts) -> Result<()> {
         out
     };
     let since = now_ms() - hours * 3_600_000;
-    let (main, fear, crypto, odds, newsr, cal) = tokio::join!(
+    let (main, fear, crypto, world, odds, newsr, cal) = tokio::join!(
         board::build(&main_ids),
         board::build(&fear_ids),
         board::build(&crypto_ids),
+        board::build(&world_ids),
         odds_f,
         news::fetch_all(None),
         news::calendar()
@@ -70,7 +82,7 @@ pub async fn brief(hours: i64, g: &Global, o: &Opts) -> Result<()> {
 
     if g.json {
         return print_json(&json!({
-            "time": now, "board": main, "fear": fear, "liquidity": liq,
+            "time": now, "board": main, "fear": fear, "liquidity": liq, "global_rates": world,
             "spreads": spreads.iter().map(|s| json!({"expr": s.0, "last": s.1, "week_ago": s.2})).collect::<Vec<_>>(),
             "crypto_positioning": crypto, "odds": odds, "calendar": cal, "headlines": headlines,
             "events": local.iter().map(|(_, e, _)| e).collect::<Vec<_>>(),
@@ -96,19 +108,22 @@ pub async fn brief(hours: i64, g: &Global, o: &Opts) -> Result<()> {
         };
         println!("VIX curve: 9D {a:.2} / 30D {b:.2} / 3M {c:.2} → {shape}");
     }
-    println!("\n## 3. Dollar liquidity (FRED; lagged 1-5 days)");
+    if let Some(g) = get(&fear, "SPX_GEX") {
+        println!("SPX dealer gamma {g:+.1} $bn per 1% move → {}", if g >= 0.0 { "dealers dampen moves" } else { "dealers amplify moves" });
+    }
+    println!("\n## 3. Dollar liquidity (NY Fed same day; FRED, DTCC and Treasury lag 1-5 days)");
     for (e, last, wk, hist) in &spreads {
-        println!(
-            "{:<26} {:+.3}  (1w ago {})  {}  {}",
-            e,
-            last,
-            wk.map(|w| format!("{w:+.3}")).unwrap_or("-".into()),
-            render::spark(&render::squeeze(hist, 24), o.ascii),
-            if *last > 0.0 { "repo above IORB" } else { "repo below IORB" }
-        );
+        let read = if e.contains("IORB") {
+            if *last > 0.0 { "repo above IORB: reserves tight" } else { "repo below IORB: reserves ample" }
+        } else {
+            "swap spread, bp: more negative = dealers' balance sheets strained by Treasury supply"
+        };
+        println!("{:<36} {:+.3}  (1w ago {})  {}  {}", e, last, wk.map(|w| format!("{w:+.3}")).unwrap_or("-".into()), render::spark(&render::squeeze(hist, 24), o.ascii), read);
     }
     print!("{}", board::render("liquidity", &liq, o).lines().skip(1).map(|l| format!("{l}\n")).collect::<String>());
-    println!("\n## 4. Crypto positioning (OKX perps, Deribit options)");
+    println!("\n## 4. Global rates, China and Hong Kong (fed funds futures = implied average rate per month)");
+    print!("{}", board::render("global_rates", &world, o).lines().skip(1).map(|l| format!("{l}\n")).collect::<String>());
+    println!("\n## 5. Crypto positioning (OKX perps, Deribit options, US spot ETF flows)");
     print!("{}", board::render("crypto", &crypto, o).lines().skip(1).map(|l| format!("{l}\n")).collect::<String>());
     if let Ok(liq_bars) = providers::ohlcv(&ids::parse("BTC#liquidations")?, Timeframe::H1, Range::last(24)).await {
         let tot: f64 = liq_bars.iter().map(|b| b.close).sum();
@@ -116,25 +131,25 @@ pub async fn brief(hours: i64, g: &Global, o: &Opts) -> Result<()> {
             println!("BTC liquidations collected (OKX, since daemon start, last 24h): ${}", render::fmt_qty(tot));
         }
     }
-    println!("\n## 5. Key odds");
+    println!("\n## 6. Key odds");
     for ms in &odds {
         print!("{}", render::series::prob_markets(&compact_event(ms), true));
     }
-    println!("\n## 6. Calendar (high impact, -1d..+3d)");
+    println!("\n## 7. Calendar (high impact, -1d..+3d)");
     if cal.is_empty() {
         println!("none");
     }
     for e in &cal {
         println!("{} {:<4} {}{}", o.dt(e.timestamp).format("%a %m-%d %H:%M"), e.source, e.title, if e.body.is_empty() { String::new() } else { format!("  ({})", e.body) });
     }
-    println!("\n## 7. Headlines (severity ≥2, last {hours}h)");
+    println!("\n## 8. Headlines (severity ≥2, last {hours}h)");
     print!("{}", render::series::events(&headlines, o, false));
     if !local.is_empty() {
-        println!("\n## 8. Your rules & monitors (last {hours}h)");
+        println!("\n## 9. Your rules & monitors (last {hours}h)");
         let list: Vec<Event> = local.into_iter().map(|(_, e, _)| e).collect();
         print!("{}", render::series::events(&list, o, false));
     }
-    println!("\ncaveats: Yahoo quotes may be ~15m delayed; FRED lags; crypto positioning is OKX-only; headlines are keyword-scored. Drill down with candles/metric/news --about.");
+    println!("\ncaveats: Yahoo and Cboe are ~15m delayed; SPX gamma assumes dealers long calls and short puts; FRED lags; swap rates are medians of reported trades; crypto positioning is OKX-only; headlines are keyword-scored. Drill down with candles/metric/news --about.");
     Ok(())
 }
 

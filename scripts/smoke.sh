@@ -25,7 +25,19 @@ check "show with column"        "ta.rsi(\$,14)"        show AUDUSD -i 1d -n 5 --
 check "show hyperliquid HIP-3"  "summary"             show hyperliquid:xyz:XYZ100 -n 5
 check "show metric line"        "stats"               show BTC#funding_rate -n 10
 check "show expression"         "expression"          show "fred:SOFR - fred:IORB" -i 1d -r 30d
+check "show nyfed distribution" "stats"               show nyfed:SOFR#p99 -n 5
+check "show treasury tga"       "stats"               show treasury:TGA -n 5
+check "show treasury auction"   "stats"               show treasury:AUCTION_10Y#bid_to_cover -n 3
+check "show dtcc swap rate"     "stats"               show dtcc:SOFR10Y -i 1d -n 5
+check "show cboe gamma"         "stats"               show cboe:SPX#gex
+check "show cfets fixing"       "stats"               show cfets:USDCNY -n 5
+check "show eastmoney yield"    "stats"               show eastmoney:CGB10Y -n 5
+check "show mof jgb"            "stats"               show mof:JGB10Y -n 5
+check "show ecb estr"           "stats"               show ecb:ESTR -n 5
+check "show farside flows"      "stats"               show farside:BTC -n 5
+check "search statistics ids"   "dtcc:SOFR10Y"        search swap --kind instruments
 check "show board"              "DVOL"                show fear
+check "show rates board"        "SWAP_SPREAD_10Y_BP"  show rates
 check "show rows"               "ETH"                 show BTC ETH
 check "show market"             "kalshi:"             show kalshi:KXFEDDECISION-26DEC
 check "show news"               " "                   show news -n 3

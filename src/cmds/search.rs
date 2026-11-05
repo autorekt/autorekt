@@ -97,7 +97,7 @@ pub async fn search(a: SearchArgs, g: &Global, o: &Opts) -> Result<()> {
 
 /// Matching markets from providers with a listing or search endpoint.
 async fn instruments(q: &str, n: usize) -> Vec<(&'static str, Result<Vec<MarketInfo>>)> {
-    let names = ["okx", "hyperliquid", "yahoo", "cftc"];
+    let names = ["okx", "hyperliquid", "yahoo", "cftc", "nyfed", "treasury", "dtcc", "cfets", "eastmoney", "mof", "ecb", "hkma", "farside"];
     let futs = names.iter().map(|p| async move {
         let r = match providers::get(p) {
             Ok(prov) => prov.list_markets(Some(q)).await.map(|mut v| {
@@ -127,6 +127,16 @@ async fn sources(check: bool, g: &Global) -> Result<()> {
             "llama" => "llama:stablecoins",
             "alt" => "alt:fng",
             "kalshi" => "kalshi:KXFEDDECISION-26DEC-H0",
+            "nyfed" => "nyfed:SOFR",
+            "treasury" => "treasury:TGA",
+            "dtcc" => "dtcc:SOFR10Y",
+            "cboe" => "cboe:SPX",
+            "cfets" => "cfets:USDCNY",
+            "eastmoney" => "eastmoney:CGB10Y",
+            "mof" => "mof:JGB10Y",
+            "ecb" => "ecb:ESTR",
+            "hkma" => "hkma:HIBOR_1M",
+            "farside" => "farside:BTC",
             _ => "",
         }
     };

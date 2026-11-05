@@ -30,7 +30,7 @@ pub async fn board(items: &[String], name: &str, g: &Global, o: &Opts) -> Result
 
 /// Series that carry one value per point render as a line (sparkline + table).
 fn is_line(id: &ids::InstrumentId) -> bool {
-    id.metric.is_some() || matches!(id.provider.as_str(), "fred" | "alt" | "polymarket" | "kalshi" | "cftc" | "finra" | "llama" | "local")
+    id.metric.is_some() || matches!(id.provider.as_str(), "polymarket" | "kalshi") || ids::POINT_PROVIDERS.contains(&id.provider.as_str())
 }
 
 fn unit_label(id: &ids::InstrumentId) -> &'static str {
