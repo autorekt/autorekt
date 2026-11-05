@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>autorekt — make your AI a Wall Street analyst</title>
+<meta name="description" content="An open-source CLI that hands your AI agent prices, dollar liquidity, swap spreads, positioning, options gamma, China's money markets, prediction-market odds and news as compact text, plus rules that wake it when something happens.">
+<meta property="og:title" content="autorekt — make your AI a Wall Street analyst">
+<meta property="og:description" content="Models are already geniuses in a data center. autorekt gives them the data: every asset class, liquidity, positioning and odds, as text an agent can read.">
+<meta property="og:url" content="https://autorekt.com/">
+<meta property="og:type" content="website">
+<meta name="theme-color" content="#0b0e13">
+<link rel="alternate" type="text/markdown" href="/index.md" title="This page as Markdown (the project README)">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<header class="nav">
+  <div class="wrap nav-in">
+    <a class="brand" href="/"><img src="/favicon.svg" alt="" width="22" height="22"><span>autorekt</span></a>
+    <nav>
+      <a href="#install">Install</a>
+      <a href="#the-bottleneck-is-data-not-intelligence">Why</a>
+      <a href="#what-your-agent-sees">Examples</a>
+      <a href="#four-verbs">Commands</a>
+      <a href="#every-free-source-worth-reading">Sources</a>
+      <a href="/index.md">Markdown</a>
+      <a class="gh" href="https://github.com/autorekt/autorekt">GitHub</a>
+    </nav>
+  </div>
+</header>
+
+<main>
+<section class="hero wrap">
+  <p class="kicker">Open source · MIT · one Rust binary · free data only</p>
+  <h1>{{TAGLINE}}</h1>
+  <p class="lead">{{LEAD}}</p>
+  <div class="cta">
+    <a class="btn primary" href="#install">Install</a>
+    <a class="btn" href="https://github.com/autorekt/autorekt">View on GitHub</a>
+    <button class="btn" type="button" id="copy-md">Copy page as Markdown</button>
+  </div>
+  {{HERO}}
+  <p class="note">Real output of <span class="mono">autorekt show</span> on November 5, 2026. Scroll inside the box for the whole briefing.</p>
+  <div class="joke">{{JOKE}}</div>
+</section>
+{{SECTIONS}}
+</main>
+
+<footer class="wrap foot">
+  <span>autorekt · {{LICENSE}} license · <a href="https://github.com/autorekt/autorekt">GitHub</a> · <a href="/index.md">Markdown</a> · <a href="/llms.txt">llms.txt</a></span>
+  <span>Not financial advice; if it were, it would have a more reassuring name.</span>
+</footer>
+
+<script>
+function flash(b, text) {
+  var old = b.textContent;
+  b.textContent = text;
+  setTimeout(function () { b.textContent = old; }, 1500);
+}
+document.querySelectorAll("[data-copy]").forEach(function (b) {
+  b.addEventListener("click", function () {
+    navigator.clipboard.writeText(b.previousElementSibling.textContent).then(function () { flash(b, "Copied"); });
+  });
+});
+document.getElementById("copy-md").addEventListener("click", function () {
+  var b = this;
+  fetch("/index.md").then(function (r) { return r.text(); }).then(function (md) {
+    return navigator.clipboard.writeText(md);
+  }).then(function () { flash(b, "Copied the README"); });
+});
+</script>
+</body>
+</html>

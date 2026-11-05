@@ -1,0 +1,16 @@
+# autorekt.com: a static site served by Cloudflare Workers static assets, built from README.md.
+# Deployed by .github/workflows/site.yml on every push to main that touches site/ or README.md;
+# by hand: `npx wrangler deploy` from this directory after `npx wrangler login`.
+name = "autorekt-site"
+compatibility_date = "2026-10-01"
+routes = [
+  { pattern = "autorekt.com", custom_domain = true },
+  { pattern = "www.autorekt.com", custom_domain = true },
+]
+
+[build]
+command = "npm ci && node build.mjs"
+
+[assets]
+directory = "./public"
+not_found_handling = "404-page"
