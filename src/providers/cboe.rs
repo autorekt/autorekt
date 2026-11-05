@@ -4,7 +4,7 @@
 //! `#gex` dealer gamma exposure in $bn per 1% move, assuming dealers are long calls and short
 //! puts (positive: dealers dampen moves; negative: they amplify them); `#put_call_oi`,
 //! `#put_call_volume`; `#skew_25d` 25-delta put minus call implied vol, vol points, at the
-//! expiry nearest 30 days; `#zero_dte_pct` share of today's volume in options expiring today;
+//! expiry nearest 30 days; `#zero_dte_pct` share of the session's volume in options expiring that day;
 //! `#iv30` the underlying's 30-day implied vol. The plain id is `#gex`.
 
 use super::*;
@@ -21,6 +21,8 @@ struct Chain {
 #[derive(Deserialize)]
 struct Data {
     current_price: f64,
+    /// The underlying's last trade, New York time: its date is the session the volumes belong to.
+    last_trade_time: String,
     #[serde(default)]
     iv30: f64,
     options: Vec<Opt>,
@@ -74,7 +76,7 @@ async fn chain(symbol: &str) -> Result<std::sync::Arc<Data>> {
 }
 
 fn metric(d: &Data, m: &str) -> Result<f64> {
-    let today = chrono::Utc::now().with_timezone(&chrono_tz::America::New_York).date_naive();
+    let today = chrono::NaiveDate::parse_from_str(d.last_trade_time.get(..10).unwrap_or(""), "%Y-%m-%d").map_err(|_| anyhow::anyhow!("cboe: no session date in the chain ('{}')", d.last_trade_time))?;
     let legs: Vec<(&Opt, chrono::NaiveDate, bool)> = d.options.iter().filter_map(|o| parse(&o.option).map(|(e, c)| (o, e, c))).collect();
     let sum = |call: bool, f: &dyn Fn(&Opt) -> f64| legs.iter().filter(|l| l.2 == call).map(|l| f(l.0)).sum::<f64>();
     Ok(match m {
