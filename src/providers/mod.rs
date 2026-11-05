@@ -7,18 +7,28 @@ use async_trait::async_trait;
 
 pub mod alt;
 pub mod binance;
+pub mod cboe;
+pub mod cfets;
 pub mod cftc;
 pub mod coinbase;
 pub mod deribit;
+pub mod dtcc;
+pub mod eastmoney;
+pub mod ecb;
+pub mod farside;
 pub mod finra;
 pub mod fred;
+pub mod hkma;
 pub mod hyperliquid;
 pub mod kalshi;
 pub mod llama;
 pub mod local;
+pub mod mof;
 pub mod news;
+pub mod nyfed;
 pub mod okx;
 pub mod polymarket;
+pub mod treasury;
 pub mod yahoo;
 
 /// Range request for history. `end` defaults to now; providers page as needed.
@@ -73,6 +83,51 @@ pub fn finish_metric(mut pts: Vec<MetricPoint>, r: Range) -> Vec<MetricPoint> {
     pts
 }
 
+pub const DAY_MS: i64 = 86_400_000;
+
+/// Midnight UTC of a calendar date, in ms.
+pub fn day_ms(d: chrono::NaiveDate) -> i64 {
+    d.and_hms_opt(0, 0, 0).unwrap().and_utc().timestamp_millis()
+}
+
+/// Start time a daily or weekly point series needs to cover `limit` bars of `tf` (business
+/// days are about 2/3 of calendar days, plus a week of slack for holidays).
+pub fn lookback(tf: Timeframe, range: Range) -> i64 {
+    range.start.unwrap_or_else(|| range.end_ms() - tf.ms().max(DAY_MS) * range.limit as i64 * 3 / 2 - 7 * DAY_MS)
+}
+
+/// Bars for a point series (one value per day or week), resampled to coarser timeframes.
+pub fn point_bars(pts: Vec<MetricPoint>, tf: Timeframe, range: Range) -> Vec<Bar> {
+    let mut bars: Vec<Bar> = finish_metric(pts, Range { limit: usize::MAX, ..range }).into_iter().map(|p| Bar::point(p.timestamp, p.value)).collect();
+    if tf.secs > 86400 {
+        bars = resample(&bars, tf);
+    }
+    finish(bars, range)
+}
+
+/// Ticker for a point series: the last value against the one before it.
+pub fn point_ticker(symbol: &str, mut pts: Vec<MetricPoint>, unit: &str) -> Result<Ticker> {
+    pts.sort_by_key(|p| p.timestamp);
+    let last = pts.last().ok_or_else(|| anyhow::anyhow!("no recent data for {symbol}"))?;
+    let prev = pts.len().checked_sub(2).map(|i| pts[i].value);
+    let date = chrono::DateTime::from_timestamp_millis(last.timestamp).unwrap_or_default().format("%Y-%m-%d");
+    let mut notes = vec![format!("as of {date}")];
+    if !unit.is_empty() {
+        notes.push(unit.to_string());
+    }
+    Ok(Ticker { symbol: symbol.into(), timestamp: last.timestamp, last: last.value, open: prev, notes, ..Default::default() })
+}
+
+/// Static market listing filtered by a case-insensitive substring of id or note.
+pub fn list_static(provider: &str, items: &[(&str, &str)], filter: Option<&str>) -> Vec<MarketInfo> {
+    let f = filter.map(|s| s.to_lowercase());
+    items
+        .iter()
+        .filter(|(id, note)| f.as_ref().map_or(true, |f| id.to_lowercase().contains(f) || note.to_lowercase().contains(f)))
+        .map(|(id, note)| MarketInfo { id: format!("{provider}:{id}"), kind: "series".into(), note: Some(note.to_string()) })
+        .collect()
+}
+
 #[async_trait]
 pub trait Provider: Send + Sync {
     fn id(&self) -> &'static str;
@@ -121,12 +176,25 @@ pub fn get(provider: &str) -> Result<Box<dyn Provider>> {
         "cftc" => Box::new(cftc::Cftc),
         "coinbase" => Box::new(coinbase::Coinbase),
         "llama" => Box::new(llama::Llama),
+        "nyfed" => Box::new(nyfed::Nyfed),
+        "treasury" => Box::new(treasury::Treasury),
+        "dtcc" => Box::new(dtcc::Dtcc),
+        "cboe" => Box::new(cboe::Cboe),
+        "cfets" => Box::new(cfets::Cfets),
+        "eastmoney" => Box::new(eastmoney::Eastmoney),
+        "mof" => Box::new(mof::Mof),
+        "ecb" => Box::new(ecb::Ecb),
+        "hkma" => Box::new(hkma::Hkma),
+        "farside" => Box::new(farside::Farside),
         _ => bail!("provider '{provider}' is not implemented yet"),
     })
 }
 
 pub fn all() -> Vec<Box<dyn Provider>> {
-    ["okx", "binance", "hyperliquid", "deribit", "coinbase", "yahoo", "fred", "cftc", "finra", "llama", "alt", "polymarket", "kalshi", "local"]
+    [
+        "okx", "binance", "hyperliquid", "deribit", "coinbase", "yahoo", "fred", "nyfed", "treasury", "dtcc", "cboe", "cfets", "eastmoney", "mof", "ecb", "hkma", "cftc",
+        "finra", "farside", "llama", "alt", "polymarket", "kalshi", "local",
+    ]
         .iter()
         .filter_map(|p| get(p).ok())
         .collect()

@@ -14,13 +14,18 @@ Four verbs: `show` (read anything), `search` (find anything), `why` (explain a m
 assets relate), `watch` (rules, backtests, alerts). An agent can also publish its analysis as
 a web page: `autorekt show report.md --share` turns markdown with ```chart blocks into a report
 with live, interactive charts. Sources: OKX, Binance, Hyperliquid (incl.
-24/7 equity perps), Deribit, Coinbase, Yahoo Finance, FRED, CFTC Commitments of Traders, FINRA
-short volume, DefiLlama, Fear & Greed indices, Polymarket, Kalshi, news feeds and the
-ForexFactory calendar. Free data only.
+24/7 equity perps), Deribit, Coinbase, Yahoo Finance, FRED, the New York Fed (SOFR distribution,
+repo facility use, primary dealer positions), US Treasury (daily TGA, auctions), USD swap rates
+from publicly reported swap trades (DTCC), Cboe option chains (dealer gamma, skew, 0DTE share),
+CFTC Commitments of Traders, FINRA short volume, yields from Japan's Ministry of Finance and the
+ECB, China's interbank market (yuan fixing, SHIBOR) and market statistics (government bond
+yields, margin debt, Stock Connect flows), the HKMA, spot crypto ETF flows (Farside),
+DefiLlama, Fear & Greed indices, Polymarket, Kalshi, news feeds and the ForexFactory calendar.
+Free data only, fetched from public endpoints on the user's machine.
 
 ## What your agent sees
 
-Real output from 2026-11-02 and 11-03 (AI-earnings selloff, a $6.3B exchange hack, a Fed
+Real output from 2026-11-02 to 11-05 (AI-earnings selloff, a $6.3B exchange hack, a Fed
 priced to hike). Lines marked `…` are trimmed.
 
 **A chart** is one line per candle: exact numbers first, the picture only for shape, and the
@@ -127,11 +132,16 @@ CNNFNG    22.73       -   +0.00  -11.67  -15.47  ▅▆▅▄▄▆▇█▇▇�
 …
 
 $ autorekt show liquidity
-id               last  1h  day     5d      30d     trend                     flags
-SOFR           3.9500   -  +1bp    +3bp    +5bp    ▁▁▂▃▄▄▃▂▃▄▄▂▂▄▃▃▂▃▃▆▇█▇█  as of 2026-10-30, daily, published with lag
-fred:IORB      3.9000   -  +0bp    +0bp    +0bp    ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄  as of 2026-11-03, daily, published with lag
-RESERVES      2893770   -  -2.32%  -2.32%  -1.24%  ▇█▁▅▇█▆▆▅▃▃█▆▄▄▂▂▁▄▂▃▅▅▁  as of 2026-10-28, daily, published with lag, USD mn
-HYOAS          3.4400   -  +18bp   +6bp    +32bp   ▁▁▂▃▄▅▅▅▅▄▅▅▅▅▆▇▇▇▆▇▇▆▅█  as of 2026-10-30, daily, published with lag
+id                      last     1h  day     5d        30d      trend                     flags
+SOFR                  3.9700      -  +2bp    +3bp      +9bp     ▁▁▂▃▂▃▁▂▃▂▁▂▂▂▂▂▂▃▄▇▆▆▇█  as of 2026-11-03, daily, published with lag
+nyfed:SOFR#p99        4.0500      -  +2bp    +3bp      +9bp     ▁▁▂▃▂▄▂▂▃▂▁▃▂▂▁▂▂▃▅▇▆▆▇█
+fred:IORB             3.9000      -  +0bp    +0bp      +0bp     ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄  as of 2026-11-05, daily, published with lag
+SRF                     0.00      -  -0.0bn  +0.0bn    -0.0bn   ▁▁▁▁█▁▁▁▁▁▁▁▂▁▁▁▁▁▁▁▁▁▁▁  as of 2026-11-04, daily, same day, USD bn
+TGA                   938.21      -  +7.5bn  -102.0bn  +67.0bn  ▄▄▃▄▃▅▁▁▁▁▁▃▁▃▄▅▄▄▅█▆▇▄▃  as of 2026-11-03, daily, one business day behind, USD bn
+DEALER_UST            425643      -  -4.03%  -4.03%    -6.36%   ▄▂█▅▆▅▇▂▄▃▁               as of 2026-10-21, weekly, about ten days behind, USD mn
+SWAP_SPREAD_10Y_BP    -41.64  -0.92  -0.92   -3.02     -3.33    ▂▁▃▄▅▆▅▂▄▂▄▃▃▄▅▆▆▅▆▅█▄▅▄  expr
+SWAP_SPREAD_30Y_BP    -67.10  -2.07  -2.07   -4.92     -1.10    ▂▁▂▃▃▃▄▃▃▁▃▂▁▁▅▅▅▅▅▄█▆▇▆  expr
+HYOAS                 3.4000      -  -3bp    +14bp     +30bp    ▁▂▃▄▅▆▅▄▅▅▅▅▆▆▇▇▆█▇▅▅▆██  as of 2026-11-03, daily, published with lag
 …
 ```
 
