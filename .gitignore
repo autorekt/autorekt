@@ -1,2 +1,6 @@
 /target
 /target-musl
+site/node_modules
+site/public/index.html
+site/public/index.md
+site/public/llms.txt
