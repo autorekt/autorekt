@@ -150,6 +150,37 @@ pub fn fed_funds_strip(n: u32) -> Vec<String> {
         .collect()
 }
 
+fn strs(v: &[&str]) -> Vec<String> {
+    v.iter().map(|s| s.to_string()).collect()
+}
+
+/// The series of each briefing section; the daemon keeps all of them fresh.
+pub struct Sections {
+    pub main: Vec<String>,
+    pub fear: Vec<String>,
+    pub liq: Vec<String>,
+    pub world: Vec<String>,
+    pub crypto: Vec<String>,
+}
+
+pub fn brief_sections() -> Sections {
+    let mut world = strs(&["US10Y", "SWAP10Y", "EA10Y", "JGB10Y", "JGB30Y", "CGB10Y", "CNYFIX", CNH_FIX_GAP, "SHIBOR3M", "CN_MARGIN", "SOUTHBOUND"]);
+    world.extend(fed_funds_strip(3));
+    Sections {
+        main: default_board(),
+        fear: strs(&["VIX9D", "VIX", "VIX3M", "VVIX", "MOVE", "OVX", "DVOL", "CNNFNG", "FNG", "SPX_GEX", "cboe:SPX#skew_25d", "cboe:SPX#put_call_volume", "cboe:SPX#zero_dte_pct"]),
+        liq: strs(&[
+            "nyfed:SOFR - fred:IORB", "nyfed:SOFR#p99 - fred:IORB", "(dtcc:SOFR10Y - fred:DGS10) * 100", "(dtcc:SOFR30Y - fred:DGS30) * 100", "SRF", "RRP", "RESERVES", "TGA",
+            "DEALER_UST", "HYOAS", "IGOAS", "NFCI", "STABLES",
+        ]),
+        world,
+        crypto: strs(&[
+            "BTC#funding_rate", "BTC#open_interest", "BTC#long_short_ratio", "BTC#top_long_short_ratio", "BTC#taker_buy_sell_ratio",
+            "ETH#funding_rate", "deribit:BTC#skew_10pct", "deribit:BTC#put_call_volume", "CB_PREMIUM_BP|(coinbase:BTC/USD / okx:BTC/USDT - 1) * 10000", "BTC_ETF_FLOW", "ETH_ETF_FLOW",
+        ]),
+    }
+}
+
 pub fn board_names() -> Vec<String> {
     let mut v: Vec<String> = ["default", "crypto", "macro", "global", "fear", "liquidity", "rates", "commodities", "positioning", "sectors", "megacaps", "asia"].iter().map(|s| s.to_string()).collect();
     for k in get().boards.keys() {

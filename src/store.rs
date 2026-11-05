@@ -1,7 +1,9 @@
 //! Local SQLite store: events (rule firings, monitor alerts), recorded series (monitor
-//! `record()`, sampled metrics such as Hyperliquid OI) and per-agent cursors for `diff`.
+//! `record()`, sampled metrics such as Hyperliquid OI), per-agent cursors for `diff`, and the
+//! fetch cache: the latest bars and quotes of every series read, when each was fetched, and which
+//! series were asked for recently (the daemon keeps those fresh).
 
-use crate::model::{Event, MetricPoint};
+use crate::model::{Bar, Event, MetricPoint, Ticker};
 use anyhow::Result;
 use rusqlite::{params, Connection, OptionalExtension};
 
@@ -23,7 +25,14 @@ pub fn open() -> Result<Connection> {
          CREATE TABLE IF NOT EXISTS cursors (agent TEXT NOT NULL, name TEXT NOT NULL, value TEXT NOT NULL,
             PRIMARY KEY(agent, name));
          CREATE TABLE IF NOT EXISTS rule_state (name TEXT PRIMARY KEY, state TEXT NOT NULL, since INTEGER,
-            last_fired INTEGER, last_value REAL, last_eval INTEGER, error TEXT);",
+            last_fired INTEGER, last_value REAL, last_eval INTEGER, error TEXT);
+         CREATE TABLE IF NOT EXISTS bars (id TEXT NOT NULL, tf INTEGER NOT NULL, ts INTEGER NOT NULL,
+            o REAL NOT NULL, h REAL NOT NULL, l REAL NOT NULL, c REAL NOT NULL, v REAL NOT NULL, closed INTEGER NOT NULL,
+            PRIMARY KEY(id, tf, ts));
+         CREATE TABLE IF NOT EXISTS fetches (key TEXT PRIMARY KEY, ok_at INTEGER, n INTEGER NOT NULL DEFAULT 0,
+            err_at INTEGER, error TEXT);
+         CREATE TABLE IF NOT EXISTS tickers (id TEXT PRIMARY KEY, json TEXT NOT NULL);
+         CREATE TABLE IF NOT EXISTS wanted (id TEXT PRIMARY KEY, at INTEGER NOT NULL);",
     )?;
     Ok(c)
 }
@@ -131,4 +140,83 @@ pub fn set_rule_state(c: &Connection, s: &RuleState) -> Result<()> {
         params![s.name, s.state, s.since, s.last_fired, s.last_value, s.last_eval, s.error],
     )?;
     Ok(())
+}
+
+/// The last fetch of a cached series: when it last succeeded (and for how many bars), and when
+/// an attempt last failed (the error itself is kept in the table for inspection).
+#[derive(Debug, Clone, Default)]
+pub struct Fetch {
+    pub ok_at: Option<i64>,
+    pub n: usize,
+    pub err_at: Option<i64>,
+}
+
+pub fn fetch_state(c: &Connection, key: &str) -> Result<Fetch> {
+    Ok(c
+        .query_row("SELECT ok_at, n, err_at FROM fetches WHERE key = ?1", params![key], |r| Ok(Fetch { ok_at: r.get(0)?, n: r.get::<_, i64>(1)? as usize, err_at: r.get(2)? }))
+        .optional()?
+        .unwrap_or_default())
+}
+
+pub fn fetch_ok(c: &Connection, key: &str, at: i64, n: usize) -> Result<()> {
+    c.execute(
+        "INSERT INTO fetches (key, ok_at, n) VALUES (?1, ?2, ?3) ON CONFLICT(key) DO UPDATE SET ok_at = ?2, n = ?3, err_at = NULL, error = NULL",
+        params![key, at, n as i64],
+    )?;
+    Ok(())
+}
+
+pub fn fetch_err(c: &Connection, key: &str, at: i64, error: &str) -> Result<()> {
+    c.execute("INSERT INTO fetches (key, err_at, error) VALUES (?1, ?2, ?3) ON CONFLICT(key) DO UPDATE SET err_at = ?2, error = ?3", params![key, at, error])?;
+    Ok(())
+}
+
+pub fn save_bars(c: &Connection, id: &str, tf: i64, bars: &[Bar]) -> Result<()> {
+    let tx = c.unchecked_transaction()?;
+    {
+        let mut st = tx.prepare("INSERT OR REPLACE INTO bars (id, tf, ts, o, h, l, c, v, closed) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9)")?;
+        for b in bars {
+            st.execute(params![id, tf, b.timestamp, b.open, b.high, b.low, b.close, b.volume, b.closed])?;
+        }
+    }
+    tx.commit()?;
+    Ok(())
+}
+
+/// The newest `limit` cached bars, oldest first.
+pub fn load_bars(c: &Connection, id: &str, tf: i64, limit: usize) -> Result<Vec<Bar>> {
+    let mut st = c.prepare("SELECT ts, o, h, l, c, v, closed FROM bars WHERE id = ?1 AND tf = ?2 ORDER BY ts DESC LIMIT ?3")?;
+    let rows = st.query_map(params![id, tf, limit as i64], |r| {
+        Ok(Bar { timestamp: r.get(0)?, open: r.get(1)?, high: r.get(2)?, low: r.get(3)?, close: r.get(4)?, volume: r.get(5)?, closed: r.get(6)? })
+    })?;
+    let mut v: Vec<Bar> = rows.filter_map(|r| r.ok()).collect();
+    v.reverse();
+    Ok(v)
+}
+
+pub fn save_ticker(c: &Connection, id: &str, t: &Ticker) -> Result<()> {
+    c.execute("INSERT OR REPLACE INTO tickers (id, json) VALUES (?1, ?2)", params![id, serde_json::to_string(t)?])?;
+    Ok(())
+}
+
+pub fn load_ticker(c: &Connection, id: &str) -> Result<Option<Ticker>> {
+    let j: Option<String> = c.query_row("SELECT json FROM tickers WHERE id = ?1", params![id], |r| r.get(0)).optional()?;
+    Ok(j.map(|j| serde_json::from_str(&j)).transpose()?)
+}
+
+/// Note that `id` was asked for, so the daemon keeps it fresh for a while.
+pub fn want(c: &Connection, id: &str, at: i64) -> Result<()> {
+    c.execute("INSERT OR REPLACE INTO wanted (id, at) VALUES (?1, ?2)", params![id, at])?;
+    Ok(())
+}
+
+pub fn wanted_since(c: &Connection, since: i64) -> Result<Vec<String>> {
+    let mut st = c.prepare("SELECT id FROM wanted WHERE at >= ?1 ORDER BY id")?;
+    let rows = st.query_map(params![since], |r| r.get(0))?;
+    Ok(rows.filter_map(|r| r.ok()).collect())
+}
+
+/// Drop cached bars older than `before`.
+pub fn prune_bars(c: &Connection, before: i64) -> Result<usize> {
+    Ok(c.execute("DELETE FROM bars WHERE ts < ?1", params![before])?)
 }

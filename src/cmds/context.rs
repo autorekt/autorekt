@@ -36,7 +36,7 @@ pub async fn print(s: &view::Series, detail: &[Bar], o: &Opts) -> Result<()> {
     out.push_str(&positioning?);
     out.push_str(&events?);
     out.push_str(&related?);
-    out.push_str(&quality(detail, tf, &daily, now));
+    out.push_str(&quality(detail, &daily));
     print!("{out}");
     Ok(())
 }
@@ -282,9 +282,9 @@ async fn related(id: &str, daily: &[Bar], at: Option<&str>) -> Result<String> {
     Ok(format!("related (60d corr with the default board{missing})  {}\n", if top.is_empty() { "-".to_string() } else { top.join(" · ") }))
 }
 
-fn quality(detail: &[Bar], tf: Timeframe, daily: &[Bar], now: i64) -> String {
-    let mut flags = structure::quality(detail, tf, now);
-    for f in structure::quality(daily, Timeframe::D1, now) {
+fn quality(detail: &[Bar], daily: &[Bar]) -> String {
+    let mut flags = structure::quality(detail);
+    for f in structure::quality(daily) {
         if !flags.contains(&f) {
             flags.push(format!("{f} (daily)"));
         }

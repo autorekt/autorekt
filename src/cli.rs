@@ -374,6 +374,13 @@ fn opts(g: &Global) -> Result<Opts> {
 
 pub async fn run() -> i32 {
     let cli = Cli::parse();
+    // The daemon keeps the series agents read fresh and runs rules: start it with any command.
+    if !matches!(cli.cmd, Cmd::Daemon(_)) && crate::daemon::running().is_none() {
+        match crate::daemon::ensure().await {
+            Ok(_) => eprintln!("started the autorekt daemon in the background (it keeps data fresh and runs your rules); manage it with `autorekt daemon status|stop|logs`"),
+            Err(e) => eprintln!("warning: could not start the daemon: {e:#}"),
+        }
+    }
     let result = match opts(&cli.g) {
         Ok(o) => match cli.cmd {
             Cmd::Show(a) => cmds::show(a, &cli.g, &o).await,
@@ -384,6 +391,15 @@ pub async fn run() -> i32 {
         },
         Err(e) => Err(e),
     };
+    let notes = crate::providers::take_issues();
+    if !notes.is_empty() {
+        let text = format!("\ndata notes:\n{}", notes.iter().map(|n| format!("  {n}\n")).collect::<String>());
+        if cli.g.json {
+            eprint!("{text}");
+        } else {
+            print!("{text}");
+        }
+    }
     match result {
         Ok(()) => 0,
         Err(e) => {

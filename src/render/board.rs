@@ -20,6 +20,19 @@ pub struct BoardRow {
     pub daily: bool,
     /// When set, changes are differences in this unit (bp, pp, pt, $bn) rather than %.
     pub unit: Option<String>,
+    /// Age of the latest value, and whether that is later than normal for the series.
+    pub age_ms: Option<i64>,
+    pub stale: bool,
+}
+
+/// Daily points a row reads. Swap rates take one file of every trade per day, so rows read two
+/// weeks of them (enough for the 5-day change); charts ask for more when wanted.
+pub fn daily_points(item: &str) -> usize {
+    if item.contains("dtcc:") {
+        12
+    } else {
+        40
+    }
 }
 
 fn daily_only(id: &InstrumentId) -> bool {
@@ -33,8 +46,8 @@ fn close_at_or_before(bars: &[Bar], t: i64) -> Option<f64> {
 /// A board row for an expression ("RSP / SPY", "fred:SOFR - fred:IORB"): changes are
 /// differences when the expression can cross zero, else percentages.
 async fn expr_row(input: &str) -> BoardRow {
-    let mut r = BoardRow { label: input.to_string(), id: input.to_string(), last: f64::NAN, chg_1h: None, chg_day: None, chg_5d: None, chg_30d: None, trend: vec![], flags: vec!["expr".into()], error: None, daily: false, unit: None };
-    let (h, d) = tokio::join!(crate::expr::evaluate(input, Timeframe::H1, Range::last(24 * 6)), crate::expr::evaluate(input, Timeframe::D1, Range::last(40)));
+    let mut r = BoardRow { label: input.to_string(), id: input.to_string(), last: f64::NAN, chg_1h: None, chg_day: None, chg_5d: None, chg_30d: None, trend: vec![], flags: vec!["expr".into()], error: None, daily: false, unit: None, age_ms: None, stale: false };
+    let (h, d) = tokio::join!(crate::expr::evaluate(input, Timeframe::H1, Range::last(24 * 6)), crate::expr::evaluate(input, Timeframe::D1, Range::last(daily_points(input))));
     let pts = |x: anyhow::Result<(Vec<i64>, Vec<f64>)>| -> Vec<Bar> {
         x.map(|(g, v)| g.into_iter().zip(v).filter(|(_, y)| y.is_finite()).map(|(t, y)| Bar::point(t, y)).collect()).unwrap_or_default()
     };
@@ -59,6 +72,18 @@ async fn expr_row(input: &str) -> BoardRow {
     if src.len() < 2 {
         r.daily = true;
     }
+    // Daily points are judged by their own rhythm; intraday ones only report their age, since a
+    // closed market would make them look late.
+    let now = crate::model::now_ms();
+    let fresh = if hb.len() >= 2 { Some(crate::freshness::Freshness { age_ms: now - last.timestamp, limit_ms: 0, closed: true }) } else { crate::freshness::assess_points(&db, now) };
+    if let Some(f) = fresh {
+        r.age_ms = Some(f.age_ms);
+        r.stale = f.stale();
+        let label = f.label();
+        if !label.is_empty() {
+            r.flags.insert(0, label);
+        }
+    }
     r
 }
 
@@ -76,26 +101,26 @@ pub async fn row(input: &str) -> BoardRow {
     let id = match ids::parse(input) {
         Ok(id) => id,
         Err(e) => {
-            return BoardRow { label: label_in, id: String::new(), last: f64::NAN, chg_1h: None, chg_day: None, chg_5d: None, chg_30d: None, trend: vec![], flags: vec![], error: Some(e.to_string()), daily: false, unit: None }
+            return BoardRow { label: label_in, id: String::new(), last: f64::NAN, chg_1h: None, chg_day: None, chg_5d: None, chg_30d: None, trend: vec![], flags: vec![], error: Some(e.to_string()), daily: false, unit: None, age_ms: None, stale: false }
         }
     };
     let upper = match label_in.split_once('#') {
         Some((a, m)) => format!("{}#{m}", a.to_uppercase()),
         None => label_in.to_uppercase(),
     };
-    let mut r = BoardRow { label: upper, id: id.to_string(), last: f64::NAN, chg_1h: None, chg_day: None, chg_5d: None, chg_30d: None, trend: vec![], flags: vec![], error: None, daily: daily_only(&id), unit: None };
+    let mut r = BoardRow { label: upper, id: id.to_string(), last: f64::NAN, chg_1h: None, chg_day: None, chg_5d: None, chg_30d: None, trend: vec![], flags: vec![], error: None, daily: daily_only(&id), unit: None, age_ms: None, stale: false };
     if r.label.contains(':') {
         r.label = ids::label(&id);
     }
     let daily = r.daily || id.provider == "polymarket" || id.provider == "kalshi";
-    let (tf, n) = if daily { (Timeframe::D1, 40) } else { (Timeframe::H1, 24 * 6) };
+    let (tf, n) = if daily { (Timeframe::D1, daily_points(&id.to_string())) } else { (Timeframe::H1, 24 * 6) };
     let bars_f = providers::ohlcv(&id, tf, Range::last(n));
     let tick_f = providers::ticker(&id);
     let daily_f = async {
         if daily {
             Ok(vec![])
         } else {
-            providers::ohlcv(&id, Timeframe::D1, Range::last(40)).await
+            providers::ohlcv(&id, Timeframe::D1, Range::last(daily_points(&id.to_string()))).await
         }
     };
     let (bars, tick, dbars): (anyhow::Result<Vec<Bar>>, anyhow::Result<Ticker>, anyhow::Result<Vec<Bar>>) = tokio::join!(bars_f, tick_f, daily_f);
@@ -176,12 +201,18 @@ pub async fn row(input: &str) -> BoardRow {
                 r.flags.push(format!("1h move z{z:+.1}"));
             }
         }
-        if now_ms_() - lt > 3 * 3_600_000 && !r.flags.iter().any(|f| f.contains("closed")) {
-            r.flags.push(format!("last bar {}h old", (now_ms_() - lt) / 3_600_000));
-        }
+    }
+    let latest = tick.as_ref().ok().map(|t| t.timestamp).filter(|t| *t > 0).unwrap_or(lt);
+    let closed = r.flags.iter().any(|f| f.contains("closed"));
+    let fresh = crate::freshness::assess(&id, &bars, latest, closed, now_ms_());
+    r.age_ms = Some(fresh.age_ms);
+    r.stale = fresh.stale();
+    let label = fresh.label();
+    if !label.is_empty() {
+        r.flags.insert(0, label);
     }
     if let Some(d) = if daily { Some(&bars) } else { dbars.as_ref().ok() } {
-        r.flags.extend(crate::structure::quality(d, Timeframe::D1, now_ms_()));
+        r.flags.extend(crate::structure::quality(d));
     }
     if id.provider == "alt" {
         let l = crate::providers::alt::fng_label(r.last).to_string();
@@ -197,8 +228,32 @@ fn now_ms_() -> i64 {
     crate::model::now_ms()
 }
 
+/// Seconds a row may take; slower ones (a first download of a long history) are reported as
+/// not ready, and the daemon goes on fetching them.
+const ROW_TIMEOUT_S: u64 = 20;
+
 pub async fn build(items: &[String]) -> Vec<BoardRow> {
-    let futs = items.iter().map(|s| row(s));
+    let futs = items.iter().map(|s| async move {
+        match tokio::time::timeout(std::time::Duration::from_secs(ROW_TIMEOUT_S), row(s)).await {
+            Ok(r) => r,
+            Err(_) => BoardRow {
+                label: s.split('|').next().unwrap_or(s).to_string(),
+                id: s.clone(),
+                last: f64::NAN,
+                chg_1h: None,
+                chg_day: None,
+                chg_5d: None,
+                chg_30d: None,
+                trend: vec![],
+                flags: vec![],
+                error: Some(format!("not ready after {ROW_TIMEOUT_S}s (still downloading; the daemon keeps fetching it, try again shortly)")),
+                daily: false,
+                unit: None,
+                age_ms: None,
+                stale: false,
+            },
+        }
+    });
     futures::future::join_all(futs).await
 }
 
@@ -208,9 +263,10 @@ pub fn render(name: &str, rows: &[BoardRow], o: &Opts) -> String {
         Some(v) if v.is_finite() => format!("{v:+.2}%"),
         _ => "-".into(),
     };
+    let mut missing = String::new();
     for r in rows {
         if let Some(e) = &r.error {
-            t.push(vec![r.label.clone(), "ERR".into(), "".into(), "".into(), "".into(), "".into(), "".into(), e.clone()]);
+            missing.push_str(&format!("missing  {}: {}\n", r.label, e));
             continue;
         }
         let pp = r.unit.as_deref() == Some("pp");
@@ -238,7 +294,7 @@ pub fn render(name: &str, rows: &[BoardRow], o: &Opts) -> String {
     }
     let now = o.full_time(crate::model::now_ms());
     format!(
-        "board {name}  {now} {}  (day = 24h for crypto, vs previous close for TradFi; rates/spreads in bp, vol & sentiment indices in points, odds in pp; trend = last 6d hourly, or 30d for daily series)\n{}",
+        "board {name}  {now} {}  (day = 24h for crypto, vs previous close for TradFi; rates/spreads in bp, vol & sentiment indices in points, odds in pp; trend = last 6d hourly, or 30d for daily series)\n{}{missing}",
         o.tz_name(),
         table(&t)
     )

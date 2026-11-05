@@ -172,7 +172,14 @@ impl Provider for Yahoo {
         let last = num(&m["regularMarketPrice"]).ok_or_else(|| anyhow::anyhow!("yahoo: no price for {symbol}"))?;
         let mut notes = Vec::new();
         let t = m["regularMarketTime"].as_i64().unwrap_or(0) * 1000;
-        if now_ms() - t > 3 * 3_600_000 {
+        // Closed outside the session Yahoo reports for the symbol; without one, when the quote
+        // has not moved for three hours.
+        let session = &m["currentTradingPeriod"]["regular"];
+        let closed = match (session["start"].as_i64(), session["end"].as_i64()) {
+            (Some(a), Some(b)) => now_ms() < a * 1000 || now_ms() >= b * 1000,
+            _ => now_ms() - t > 3 * 3_600_000,
+        };
+        if closed {
             notes.push("market closed".into());
         }
         // previousClose is absent for some symbols: take the last daily close dated before the
