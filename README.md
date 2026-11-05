@@ -176,6 +176,12 @@ Install autorekt (https://autorekt.com, source at https://github.com/autorekt/au
 4. Check it works with `autorekt show`, then learn the commands from `autorekt --help`.
 ```
 
+Once installed, autorekt runs entirely on your machine and never contacts a server of ours: no
+account, no telemetry, nothing is ever sent to us. It fetches data straight from the public
+sources themselves (exchanges, central banks, statistics offices, news feeds), and opens a
+Cloudflare tunnel only when you share a chart. Every address it contacts is written out in the
+source, so this is easy to verify; the second prompt below has your agent verify it.
+
 If you care a lot about security, use this one instead: your agent audits the whole repository,
 tells you the risks, and only then builds from the audited source. Installing becomes slow and
 uses many tokens.
@@ -186,7 +192,8 @@ repository: the Rust source, build scripts, the dependencies in Cargo.toml and C
 install scripts in site/install/ and the GitHub workflows. Find everything risky: which network
 addresses it contacts and what it sends; which files it reads or writes outside its own directory
 (~/.autorekt); which commands it runs (hooks, monitors, the downloaded cloudflared); what the local
-HTTP server exposes; the public tunnel; and dependencies that are unusual or unmaintained. Report
+HTTP server exposes; the public tunnel; and dependencies that are unusual or unmaintained. Check in
+particular the claim that it never contacts a server run by its authors. Report
 each risk to me with its file and line, how serious it is and whether it can be turned off, then
 wait for my go-ahead. Then build from the audited source with `cargo build --release` (installing a
 Rust toolchain the usual way if needed), put the binary on PATH, and check it with `autorekt show`.

@@ -167,6 +167,8 @@ caveats: Yahoo and Cboe are ~15m delayed; SPX gamma assumes dealers long calls a
 4. 运行 `autorekt show` 确认能用，然后从 `autorekt --help` 学习命令。
 ```
 
+安装之后，autorekt 完全在你自己的机器上运行，从不连接我们的任何服务器：不需要账号，没有遥测，不会向我们发送任何东西。数据直接从各个公开数据源本身获取（交易所、央行、统计机构、新闻源），只有在你分享图表时才会开一个 Cloudflare 隧道。它访问的每个网络地址都明文写在源码里，很容易验证；下面第二段提示词就会让你的 agent 去验证这一点。
+
 如果你非常在乎安全，可以改用下面这段：agent 会先审计整个仓库，把有风险的地方告诉你，再从审计过的源码编译安装。这会让安装变得很慢，也会消耗大量 token。
 
 ```text
@@ -174,7 +176,7 @@ caveats: Yahoo and Cboe are ~15m delayed; SPX gamma assumes dealers long calls a
 编译脚本、Cargo.toml 和 Cargo.lock 里的依赖、site/install/ 里的安装脚本，以及 GitHub 工作流。
 找出所有有风险的地方：它访问哪些网络地址、发送了什么；它在自己的目录（~/.autorekt）之外读写哪些
 文件；它会运行哪些命令（钩子、监控脚本、下载的 cloudflared）；本地 HTTP 服务暴露了什么；公网隧道；
-以及不常见或无人维护的依赖。把每个风险连同文件和行号、严重程度、能否关闭一起告诉我，然后等我同意。
+以及不常见或无人维护的依赖。特别核实“它从不连接作者运营的服务器”这一说法。把每个风险连同文件和行号、严重程度、能否关闭一起告诉我，然后等我同意。
 同意后用审计过的源码运行 `cargo build --release` 编译（需要时按正常方式安装 Rust 工具链），把二进制
 放到 PATH 上，再运行 `autorekt show` 确认能用。
 ```
