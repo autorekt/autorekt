@@ -61,13 +61,21 @@ mod imp {
 mod imp {
     use std::os::windows::process::CommandExt;
     use std::path::Path;
-    use windows_sys::Win32::Foundation::{CloseHandle, STILL_ACTIVE};
+    use windows_sys::Win32::Foundation::{CloseHandle, SetHandleInformation, HANDLE_FLAG_INHERIT, STILL_ACTIVE};
+    use windows_sys::Win32::System::Console::{GetStdHandle, STD_ERROR_HANDLE, STD_INPUT_HANDLE, STD_OUTPUT_HANDLE};
     use windows_sys::Win32::System::Threading::{GetExitCodeProcess, OpenProcess, CREATE_NEW_PROCESS_GROUP, CREATE_NO_WINDOW, DETACHED_PROCESS, PROCESS_QUERY_LIMITED_INFORMATION};
 
     pub const PYTHON: &str = "python";
 
-    /// Run `cmd` without a console so it outlives the terminal that started it.
+    /// Run `cmd` without a console so it outlives the terminal that started it. Windows hands
+    /// every inheritable handle to a child, so this process's own stdin, stdout and stderr stop
+    /// being inheritable: otherwise the child holds a caller's pipe open and the caller waits forever.
     pub fn detach(cmd: &mut std::process::Command) {
+        for h in [STD_INPUT_HANDLE, STD_OUTPUT_HANDLE, STD_ERROR_HANDLE] {
+            unsafe {
+                SetHandleInformation(GetStdHandle(h), HANDLE_FLAG_INHERIT, 0);
+            }
+        }
         cmd.creation_flags(DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP);
     }
 
