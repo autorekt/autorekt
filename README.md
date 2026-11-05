@@ -159,37 +159,37 @@ caveats: Yahoo and Cboe are ~15m delayed; SPX gamma assumes dealers long calls a
 
 ## Install
 
-On Linux or macOS:
-
-```sh
-curl -fsSL https://autorekt.com/install.sh | sh
-```
-
-On Windows, in PowerShell:
+Give your agent this prompt:
 
 ```text
-irm https://autorekt.com/install.ps1 | iex
+Install autorekt (https://autorekt.com, source at https://github.com/autorekt/autorekt).
+1. Install the prebuilt binary: on Linux or macOS run `curl -fsSL https://autorekt.com/install.sh | sh`;
+   on Windows run `irm https://autorekt.com/install.ps1 | iex` in PowerShell, or
+   `curl -fsSL https://autorekt.com/install.cmd -o install.cmd && install.cmd && del install.cmd` in CMD.
+2. If that fails, build from source: clone the repository, run `cargo build --release` and put the
+   binary on PATH. Use the Rust toolchain already on this machine if it is new enough. Install a
+   missing or outdated Rust toolchain, C compiler or other build dependency the way a person would
+   on this system, with the official installer or the system package manager (for example rustup
+   from https://rustup.rs, build-essential, the Xcode command line tools, Visual Studio Build Tools).
+3. Debug any problem until everything works, changing the code if you must, and tell me what you
+   changed.
+4. Check it works with `autorekt show`, then learn the commands from `autorekt --help`.
 ```
 
-Or in CMD:
+If you care a lot about security, use this one instead: your agent audits the whole repository,
+tells you the risks, and only then builds from the audited source. Installing becomes slow and
+uses many tokens.
 
 ```text
-curl -fsSL https://autorekt.com/install.cmd -o install.cmd && install.cmd && del install.cmd
-```
-
-Then run `autorekt show`, or give your agent this prompt:
-
-```text
-Install autorekt with `curl -fsSL https://autorekt.com/install.sh | sh` (on Windows:
-`irm https://autorekt.com/install.ps1 | iex`), run `autorekt show` to check it works, and learn
-the commands from `autorekt --help`.
-```
-
-The installer puts one binary in `~/.local/bin` and adds it to your PATH. To build it yourself:
-
-```sh
-git clone https://github.com/autorekt/autorekt && cd autorekt
-cargo build --release && ./target/release/autorekt show
+Before installing autorekt, audit it. Clone https://github.com/autorekt/autorekt and read the whole
+repository: the Rust source, build scripts, the dependencies in Cargo.toml and Cargo.lock, the
+install scripts in site/install/ and the GitHub workflows. Find everything risky: which network
+addresses it contacts and what it sends; which files it reads or writes outside its own directory
+(~/.autorekt); which commands it runs (hooks, monitors, the downloaded cloudflared); what the local
+HTTP server exposes; the public tunnel; and dependencies that are unusual or unmaintained. Report
+each risk to me with its file and line, how serious it is and whether it can be turned off, then
+wait for my go-ahead. Then build from the audited source with `cargo build --release` (installing a
+Rust toolchain the usual way if needed), put the binary on PATH, and check it with `autorekt show`.
 ```
 
 autorekt observes; it never trades. It works with any agent that can run a shell command. Free

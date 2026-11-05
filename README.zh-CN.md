@@ -148,41 +148,35 @@ caveats: Yahoo and Cboe are ~15m delayed; SPX gamma assumes dealers long calls a
 
 </details>
 
-> *autorekt*（名词）：自动爆仓装置。它把世上所有的 K 线、资金费率、信用利差和预测市场都交给你的 agent，让它能以前所未有的自信犯错。以前的人只能手动爆仓。本项目不构成投资建议；如果构成，它会起一个更让人放心的名字。
+> *autorekt*（名词）：自动爆仓器。它把世上所有的 K 线、资金费率、信用利差和预测市场都交给你的 agent，让它能以前所未有的自信犯错。以前的人只能手动爆仓。本项目不构成投资建议；如果构成，它会起一个更让人放心的名字。
 
 ## 安装
 
-Linux 或 macOS：
-
-```sh
-curl -fsSL https://autorekt.com/install.sh | sh
-```
-
-Windows，在 PowerShell 里：
+把这段提示词交给你的 agent：
 
 ```text
-irm https://autorekt.com/install.ps1 | iex
+安装 autorekt（https://autorekt.com，源码在 https://github.com/autorekt/autorekt）。
+1. 先装预编译的二进制：Linux 或 macOS 上运行 `curl -fsSL https://autorekt.com/install.sh | sh`；
+   Windows 上在 PowerShell 里运行 `irm https://autorekt.com/install.ps1 | iex`，或在 CMD 里运行
+   `curl -fsSL https://autorekt.com/install.cmd -o install.cmd && install.cmd && del install.cmd`。
+2. 如果失败，就从源码编译：克隆仓库，运行 `cargo build --release`，把生成的二进制放到 PATH 上。
+   这台机器上已有的 Rust 工具链够新就直接用它。缺少或版本太旧的 Rust 工具链、C 编译器和其他
+   编译依赖，按人在这个系统上的正常做法安装：官方安装程序或系统的包管理器（例如 https://rustup.rs
+   的 rustup、build-essential、Xcode 命令行工具、Visual Studio Build Tools）。
+3. 遇到任何问题都自己排查，直到一切正常；必要时可以修改代码，并告诉我改了什么。
+4. 运行 `autorekt show` 确认能用，然后从 `autorekt --help` 学习命令。
 ```
 
-或者在 CMD 里：
+如果你非常在乎安全，可以改用下面这段：agent 会先审计整个仓库，把有风险的地方告诉你，再从审计过的源码编译安装。这会让安装变得很慢，也会消耗大量 token。
 
 ```text
-curl -fsSL https://autorekt.com/install.cmd -o install.cmd && install.cmd && del install.cmd
-```
-
-然后运行 `autorekt show`，或者把这段提示词交给你的 agent：
-
-```text
-Install autorekt with `curl -fsSL https://autorekt.com/install.sh | sh` (on Windows:
-`irm https://autorekt.com/install.ps1 | iex`), run `autorekt show` to check it works, and learn
-the commands from `autorekt --help`.
-```
-
-安装程序只会把一个可执行文件放到 `~/.local/bin`，并把这个目录加入 PATH。自己编译：
-
-```sh
-git clone https://github.com/autorekt/autorekt && cd autorekt
-cargo build --release && ./target/release/autorekt show
+安装 autorekt 之前先审计它。克隆 https://github.com/autorekt/autorekt，读完整个仓库：Rust 源码、
+编译脚本、Cargo.toml 和 Cargo.lock 里的依赖、site/install/ 里的安装脚本，以及 GitHub 工作流。
+找出所有有风险的地方：它访问哪些网络地址、发送了什么；它在自己的目录（~/.autorekt）之外读写哪些
+文件；它会运行哪些命令（钩子、监控脚本、下载的 cloudflared）；本地 HTTP 服务暴露了什么；公网隧道；
+以及不常见或无人维护的依赖。把每个风险连同文件和行号、严重程度、能否关闭一起告诉我，然后等我同意。
+同意后用审计过的源码运行 `cargo build --release` 编译（需要时按正常方式安装 Rust 工具链），把二进制
+放到 PATH 上，再运行 `autorekt show` 确认能用。
 ```
 
 autorekt 只观察，从不交易，任何能执行 shell 命令的 agent 都能用。只用免费数据，在你自己的机器上从公开接口获取：不需要注册账号，也不需要 API 密钥。
