@@ -2,7 +2,7 @@ name: site
 on:
   push:
     branches: [main]
-    paths: ["site/**", "README.md"]
+    paths: ["site/**", "README.md", "README.zh-CN.md"]
   workflow_dispatch:
 jobs:
   deploy:

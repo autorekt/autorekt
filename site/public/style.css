@@ -52,7 +52,7 @@ p code, li code { background: color-mix(in srgb, var(--muted) 14%, transparent);
 
 .hero { padding: 72px 24px 56px; }
 .kicker { font: 500 13px var(--mono); color: var(--accent); margin: 0 0 18px; letter-spacing: 0.02em; }
-h1 { font-size: clamp(40px, 7vw, 76px); line-height: 1.02; letter-spacing: -0.035em; margin: 0 0 22px; font-weight: 750; max-width: 980px; }
+h1 { font-size: clamp(40px, 7vw, 76px); line-height: 1.08; letter-spacing: -0.035em; margin: 0 0 22px; font-weight: 750; max-width: 980px; text-wrap: balance; }
 h2 { font-size: clamp(28px, 4vw, 42px); line-height: 1.12; letter-spacing: -0.025em; margin: 0 0 18px; }
 h3 { font-size: 19px; margin: 0 0 8px; letter-spacing: -0.01em; }
 .lead { font-size: clamp(18px, 2vw, 21px); color: var(--muted); max-width: 820px; margin: 0 0 28px; }
@@ -108,7 +108,7 @@ section .wrap > p { color: var(--muted); max-width: 820px; }
 @media (max-width: 960px) {
   .duo { grid-template-columns: minmax(0, 1fr); gap: 16px; }
   .duo .copy { position: static; }
-  .nav nav a[href="/index.md"] { display: none; }
+  .nav nav a.md { display: none; }
 }
 
 @media (max-width: 640px) {

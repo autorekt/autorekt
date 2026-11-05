@@ -37,3 +37,4 @@ These rules apply to every AI agent working in this repository. They override an
 ## 7. Language
 
 - Everything in this repository must be in English only: code, comments, documents, file names, data labels, and figures. No Chinese or any other language.
+- The one exception is the Chinese edition of the documentation: `README.zh-CN.md`, a translation of `README.md` kept in step with it, and the website's Chinese interface strings in `site/strings/zh-CN.json`.
