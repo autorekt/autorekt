@@ -1,15 +1,124 @@
+# Builds and tests every platform, then installs each build with the real one-line install
+# command from a local copy of autorekt.com and runs the smoke test in a fresh shell. A tag v*
+# also publishes a GitHub release and redeploys the site with its binaries.
 name: build
-on: [push, pull_request]
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+env:
+  CC_x86_64_unknown_linux_musl: musl-gcc
+  CC_aarch64_unknown_linux_musl: musl-gcc
 jobs:
   build:
-    runs-on: ubuntu-latest
-    container: rust:1-alpine
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: linux-x64, os: ubuntu-latest, target: x86_64-unknown-linux-musl }
+          - { name: linux-arm64, os: ubuntu-24.04-arm, target: aarch64-unknown-linux-musl }
+          - { name: darwin-x64, os: macos-15-intel, target: x86_64-apple-darwin }
+          - { name: darwin-arm64, os: macos-15, target: aarch64-apple-darwin }
+          - { name: windows-x64, os: windows-latest, target: x86_64-pc-windows-msvc, exe: .exe }
+          - { name: windows-arm64, os: windows-11-arm, target: aarch64-pc-windows-msvc, exe: .exe }
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
-      - run: apk add --no-cache musl-dev
-      - run: cargo test --release
-      - run: cargo build --release
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y musl-tools
+      - run: cargo test --release --target ${{ matrix.target }}
+      - run: cargo build --release --target ${{ matrix.target }}
+      - shell: bash
+        run: mkdir dist && cp target/${{ matrix.target }}/release/autorekt${{ matrix.exe }} dist/autorekt-${{ matrix.name }}${{ matrix.exe }}
       - uses: actions/upload-artifact@v4
         with:
-          name: autorekt-linux-x86_64-static
-          path: target/release/autorekt
+          name: autorekt-${{ matrix.name }}
+          path: dist/*
+
+  install:
+    needs: build
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, ubuntu-24.04-arm, macos-15-intel, macos-15, windows-latest, windows-11-arm]
+    runs-on: ${{ matrix.os }}
+    env:
+      SITE_URL: http://127.0.0.1:8000
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: site/dist
+          merge-multiple: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - working-directory: site
+        run: npm ci && node build.mjs
+      - name: Serve the site locally
+        shell: bash
+        run: |
+          nohup python -m http.server 8000 --bind 127.0.0.1 --directory site/public > server.log 2>&1 &
+          for i in $(seq 30); do curl -fsS "$SITE_URL/install.sh" > /dev/null && exit 0; sleep 1; done
+          cat server.log; exit 1
+
+      - name: Install with curl | sh
+        if: runner.os != 'Windows'
+        run: curl -fsSL "$SITE_URL/install.sh" | sh
+      - name: Smoke test in a fresh shell
+        if: runner.os != 'Windows'
+        run: $SHELL -ic 'autorekt --version && bash scripts/smoke.sh autorekt'
+      - name: Install in clean Alpine, Debian and Ubuntu containers
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          for img in alpine:3 debian:stable-slim ubuntu:24.04; do
+            echo "== $img"
+            docker run --rm --network host -e SITE_URL "$img" sh -c '
+              if command -v apk >/dev/null; then apk add -q curl; else apt-get -qq update && apt-get -qq install -y curl ca-certificates >/dev/null; fi
+              curl -fsSL "$SITE_URL/install.sh" | sh
+              sh -lc "autorekt --version && autorekt daemon start && autorekt daemon status && autorekt daemon stop"'
+          done
+
+      - name: Install with irm | iex
+        if: runner.os == 'Windows'
+        shell: powershell
+        run: irm "$env:SITE_URL/install.ps1" | iex
+      - name: Install from CMD
+        if: runner.os == 'Windows'
+        shell: cmd
+        run: curl -fsSL %SITE_URL%/install.cmd -o install.cmd && install.cmd && del install.cmd
+      - name: Smoke test in a fresh shell
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          # A new terminal reads the user's PATH from the registry, where the installer added autorekt.
+          user_path=$(powershell -NoProfile -Command "[Environment]::GetEnvironmentVariable('Path', 'User')" | tr -d '\r')
+          export PATH="$PATH:$(cygpath -p "$user_path")"
+          autorekt --version && bash scripts/smoke.sh autorekt
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: install
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - run: gh release create "$GITHUB_REF_NAME" dist/* --repo "$GITHUB_REPOSITORY" --generate-notes
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+  site:
+    needs: release
+    uses: ./.github/workflows/site.yml
+    secrets: inherit

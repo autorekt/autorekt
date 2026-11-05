@@ -159,15 +159,33 @@ caveats: Yahoo and Cboe are ~15m delayed; SPX gamma assumes dealers long calls a
 
 ## Install
 
-Give your agent this prompt:
+On Linux or macOS:
 
-```text
-Install autorekt from https://github.com/autorekt/autorekt: build it with `cargo build --release`
-(or download the static Linux binary from the latest build artifact), put the binary on PATH,
-run `autorekt show` to check it works, and learn the commands from `autorekt --help`.
+```sh
+curl -fsSL https://autorekt.com/install.sh | sh
 ```
 
-Or build it yourself:
+On Windows, in PowerShell:
+
+```text
+irm https://autorekt.com/install.ps1 | iex
+```
+
+Or in CMD:
+
+```text
+curl -fsSL https://autorekt.com/install.cmd -o install.cmd && install.cmd && del install.cmd
+```
+
+Then run `autorekt show`, or give your agent this prompt:
+
+```text
+Install autorekt with `curl -fsSL https://autorekt.com/install.sh | sh` (on Windows:
+`irm https://autorekt.com/install.ps1 | iex`), run `autorekt show` to check it works, and learn
+the commands from `autorekt --help`.
+```
+
+The installer puts one binary in `~/.local/bin` and adds it to your PATH. To build it yourself:
 
 ```sh
 git clone https://github.com/autorekt/autorekt && cd autorekt

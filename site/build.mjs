@@ -1,8 +1,15 @@
 // Builds autorekt.com from the repository READMEs, the only source of the site's words. For each
 // language: index.html (the README rendered into template.html with that language's interface
-// strings) and index.md (the README itself); plus llms.txt, a pointer for language models.
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+// strings) and index.md (the README itself); plus llms.txt, a pointer for language models; the
+// install scripts; and the release binaries from dist/ with their checksums under dl/.
+// SITE_URL (default https://autorekt.com) is the address baked into the install scripts; CI
+// builds the site for a local server to test the real install commands.
+import { createHash } from "node:crypto";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { marked } from "marked";
+
+const SITE = process.env.SITE_URL ?? "https://autorekt.com";
+const BINARIES = ["linux-x64", "linux-arm64", "darwin-x64", "darwin-arm64", "windows-x64.exe", "windows-arm64.exe"].map((p) => `autorekt-${p}`);
 
 const here = (p) => new URL(p, import.meta.url);
 const read = (p) => readFileSync(here(p), "utf8");
@@ -134,8 +141,24 @@ for (const l of LANGS) build(l, ids);
 writeFileSync(
   here("public/llms.txt"),
   `# autorekt\n\n> ${english.tagline.text.replace(/\*\*/g, "")} ${english.lead.text.replace(/\s+/g, " ")}\n\n` +
-    `- [README as Markdown](https://autorekt.com/index.md): what autorekt does, install, real output, commands and sources\n` +
-    `- [README in Chinese](https://autorekt.com/zh/index.md)\n` +
+    `- [README as Markdown](${SITE}/index.md): what autorekt does, install, real output, commands and sources\n` +
+    `- [README in Chinese](${SITE}/zh/index.md)\n` +
     `- [Source code](https://github.com/autorekt/autorekt)\n`,
 );
 console.log("built public/llms.txt");
+
+for (const f of ["install.sh", "install.ps1", "install.cmd"]) {
+  const text = read(`install/${f}`).replaceAll("{{SITE}}", SITE);
+  writeFileSync(here(`public/${f}`), f.endsWith(".cmd") ? text.replace(/\r?\n/g, "\r\n") : text);
+}
+console.log(`built install scripts for ${SITE}`);
+
+mkdirSync(here("public/dl"), { recursive: true });
+const sums = BINARIES.map((f) => {
+  if (!existsSync(here(`dist/${f}`))) throw new Error(`site/dist/${f} is missing; fetch the release binaries with: gh release download -R autorekt/autorekt -p 'autorekt-*' -D site/dist`);
+  const data = readFileSync(here(`dist/${f}`));
+  writeFileSync(here(`public/dl/${f}`), data);
+  return `${createHash("sha256").update(data).digest("hex")}  ${f}\n`;
+});
+writeFileSync(here("public/dl/SHA256SUMS"), sums.join(""));
+console.log(`built dl/ with ${BINARIES.length} binaries`);

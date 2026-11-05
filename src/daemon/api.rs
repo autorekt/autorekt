@@ -1,5 +1,5 @@
 //! The daemon's local HTTP API (bearer-token protected): status, ohlcv, eval, record,
-//! event. Monitors and CLI commands talk to the daemon through it.
+//! event, shutdown. Monitors and CLI commands talk to the daemon through it.
 
 use super::*;
 
@@ -9,6 +9,14 @@ pub(super) fn authed(st: &Info, h: &HeaderMap) -> bool {
 
 pub(super) fn err(code: StatusCode, msg: impl ToString) -> Response {
     (code, Json(json!({"error": msg.to_string()}))).into_response()
+}
+
+pub(super) async fn api_shutdown(State(st): State<St>, h: HeaderMap) -> Response {
+    if !authed(&*st.info.lock().await, &h) {
+        return err(StatusCode::UNAUTHORIZED, "bad token");
+    }
+    st.shutdown.notify_one();
+    Json(json!({"ok": true})).into_response()
 }
 
 #[derive(Deserialize)]

@@ -55,8 +55,7 @@ pub fn home() -> PathBuf {
     if let Ok(h) = std::env::var("AUTOREKT_HOME") {
         return PathBuf::from(h);
     }
-    let base = std::env::var("HOME").map(PathBuf::from).unwrap_or_else(|_| PathBuf::from("."));
-    base.join(".autorekt")
+    std::env::home_dir().expect("no home directory found; set AUTOREKT_HOME").join(".autorekt")
 }
 
 pub fn get() -> &'static Config {

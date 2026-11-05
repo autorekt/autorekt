@@ -1,7 +1,11 @@
 /target
 /target-musl
+/target-win
 site/node_modules
 site/public/index.html
 site/public/index.md
 site/public/llms.txt
 site/public/zh/
+site/public/install.*
+site/public/dl/
+site/dist/

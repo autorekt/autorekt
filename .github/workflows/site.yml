@@ -1,14 +1,20 @@
+# Deploys autorekt.com with the binaries of the latest release. Runs on pushes to main that
+# touch the site or a README, and after build.yml publishes a release.
 name: site
 on:
   push:
     branches: [main]
     paths: ["site/**", "README.md", "README.zh-CN.md"]
+  workflow_call:
   workflow_dispatch:
 jobs:
   deploy:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - run: gh release download --repo "$GITHUB_REPOSITORY" --pattern 'autorekt-*' --dir site/dist
+        env:
+          GH_TOKEN: ${{ github.token }}
       - uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}

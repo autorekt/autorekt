@@ -152,15 +152,33 @@ caveats: Yahoo and Cboe are ~15m delayed; SPX gamma assumes dealers long calls a
 
 ## 安装
 
-把这段提示词交给你的 agent：
+Linux 或 macOS：
 
-```text
-Install autorekt from https://github.com/autorekt/autorekt: build it with `cargo build --release`
-(or download the static Linux binary from the latest build artifact), put the binary on PATH,
-run `autorekt show` to check it works, and learn the commands from `autorekt --help`.
+```sh
+curl -fsSL https://autorekt.com/install.sh | sh
 ```
 
-或者自己编译：
+Windows，在 PowerShell 里：
+
+```text
+irm https://autorekt.com/install.ps1 | iex
+```
+
+或者在 CMD 里：
+
+```text
+curl -fsSL https://autorekt.com/install.cmd -o install.cmd && install.cmd && del install.cmd
+```
+
+然后运行 `autorekt show`，或者把这段提示词交给你的 agent：
+
+```text
+Install autorekt with `curl -fsSL https://autorekt.com/install.sh | sh` (on Windows:
+`irm https://autorekt.com/install.ps1 | iex`), run `autorekt show` to check it works, and learn
+the commands from `autorekt --help`.
+```
+
+安装程序只会把一个可执行文件放到 `~/.local/bin`，并把这个目录加入 PATH。自己编译：
 
 ```sh
 git clone https://github.com/autorekt/autorekt && cd autorekt
