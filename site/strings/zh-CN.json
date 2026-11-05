@@ -4,7 +4,6 @@
   "title": "autorekt — 让你的 AI 成为华尔街分析师",
   "description": "一个开源命令行工具：把价格、美元流动性、互换利差、市场仓位、期权伽马、中国资金面、预测市场赔率和新闻，以紧凑文本交给你的 AI agent，并在出事时叫醒它。",
   "og_description": "数据中心里已经坐满了天才。autorekt 给它们数据：所有资产类别、流动性、仓位和赔率，都是 agent 读得懂的文本。",
-  "kicker": "开源 · MIT 许可 · 单个 Rust 程序 · 只用免费数据",
   "install": "安装",
   "github": "在 GitHub 上查看",
   "copy_md": "复制本页 Markdown",
