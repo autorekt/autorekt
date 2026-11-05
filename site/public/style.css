@@ -51,7 +51,6 @@ p code, li code { background: color-mix(in srgb, var(--muted) 14%, transparent);
 .nav nav a.gh { color: var(--fg); font-weight: 600; }
 
 .hero { padding: 72px 24px 56px; }
-.kicker { font: 500 13px var(--mono); color: var(--accent); margin: 0 0 18px; letter-spacing: 0.02em; }
 h1 { font-size: clamp(40px, 7vw, 76px); line-height: 1.08; letter-spacing: -0.035em; margin: 0 0 22px; font-weight: 750; max-width: 980px; text-wrap: balance; }
 h2 { font-size: clamp(28px, 4vw, 42px); line-height: 1.12; letter-spacing: -0.025em; margin: 0 0 18px; }
 h3 { font-size: 19px; margin: 0 0 8px; letter-spacing: -0.01em; }

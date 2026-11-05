@@ -4,7 +4,6 @@
   "title": "autorekt — make your AI a Wall Street analyst",
   "description": "An open-source CLI that hands your AI agent prices, dollar liquidity, swap spreads, positioning, options gamma, China's money markets, prediction-market odds and news as compact text, plus rules that wake it when something happens.",
   "og_description": "Models are already geniuses in a data center. autorekt gives them the data: every asset class, liquidity, positioning and odds, as text an agent can read.",
-  "kicker": "Open source · MIT · one Rust binary · free data only",
   "install": "Install",
   "github": "View on GitHub",
   "copy_md": "Copy page as Markdown",
