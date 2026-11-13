@@ -1,5 +1,6 @@
-//! Shareable charts: share specs, the cloudflared quick tunnel, the single-chart page and the
-//! chart data endpoint (with reports, the only routes that are public through the tunnel).
+//! Shareable charts: share specs (kept in the store, so links survive restarts), the cloudflared
+//! quick tunnel, the single-chart page and the chart data endpoint (with reports, the only
+//! routes that are public through the tunnel).
 
 use super::*;
 use tokio::io::AsyncBufReadExt;
@@ -10,7 +11,6 @@ pub struct ShareSpec {
     pub id: String,   // instrument id or expression
     pub tf: String,
     pub limit: usize,
-    pub expires: i64,
     #[serde(default)]
     pub title: Option<String>,
     #[serde(default)]
@@ -44,6 +44,13 @@ pub(super) struct ShareReq {
     range_secs: Option<i64>,
     #[serde(default)]
     end: Option<i64>,
+    #[serde(default)]
+    name: Option<String>,
+    #[serde(default = "d_origin")]
+    origin: String,
+}
+pub(super) fn d_origin() -> String {
+    "manual".into()
 }
 pub(super) fn d_kind_c() -> String {
     "candles".into()
@@ -52,17 +59,8 @@ pub(super) fn d_ttl() -> i64 {
     7 * 86400
 }
 
-pub(super) fn shares_path() -> PathBuf {
-    config::home().join("shares.json")
-}
-pub(super) fn load_shares() -> HashMap<String, ShareSpec> {
-    let mut m: HashMap<String, ShareSpec> = std::fs::read_to_string(shares_path()).ok().and_then(|t| serde_json::from_str(&t).ok()).unwrap_or_default();
-    m.retain(|_, s| s.expires > now_ms());
-    m
-}
-
 pub(super) async fn create_share_local(id: &str, kind: &str, tf: &str, limit: usize, ttl: i64) -> Result<String> {
-    let v = api("share", json!({"id": id, "kind": kind, "tf": tf, "limit": limit, "ttl_secs": ttl})).await?;
+    let v = api("share", json!({"id": id, "kind": kind, "tf": tf, "limit": limit, "ttl_secs": ttl, "origin": "hook"})).await?;
     v["url"].as_str().map(|s| s.to_string()).ok_or_else(|| anyhow!("no url"))
 }
 
@@ -74,22 +72,65 @@ pub(super) async fn api_share(State(st): State<St>, h: HeaderMap, Json(r): Json<
     if Timeframe::parse(&r.tf).is_err() {
         return err(StatusCode::BAD_REQUEST, "bad tf");
     }
-    let spec = ShareSpec { kind: r.kind, id: r.id, tf: r.tf, limit: r.limit.min(2000), expires: now_ms() + r.ttl_secs * 1000, title: r.title, overlays: r.overlays, range_secs: r.range_secs, end: r.end };
-    let token = insert_share(&st, spec).await;
+    let spec = ShareSpec { kind: r.kind, id: r.id, tf: r.tf, limit: r.limit.min(2000), title: r.title, overlays: r.overlays, range_secs: r.range_secs, end: r.end };
+    let key = format!("chart:{}|{}", serde_json::to_string(&spec).unwrap_or_default(), r.name.unwrap_or_default());
+    if r.ttl_secs == 0 {
+        return match revoke(&key) {
+            Ok(n) => Json(json!({"revoked": n})).into_response(),
+            Err(e) => err(StatusCode::INTERNAL_SERVER_ERROR, format!("{e:#}")),
+        };
+    }
+    let title = spec.title.clone().unwrap_or_else(|| format!("{} · {}", spec.id, spec.tf));
+    let token = match put_share(&key, "chart", &title, &spec, None, &r.origin, r.ttl_secs) {
+        Ok(t) => t,
+        Err(e) => return err(StatusCode::INTERNAL_SERVER_ERROR, format!("{e:#}")),
+    };
     match public_url(&st, info.port, r.tunnel, &format!("c/{token}")).await {
         Ok(v) => Json(v).into_response(),
         Err(resp) => resp,
     }
 }
 
-/// Store a chart share and return its token.
-pub(super) async fn insert_share(st: &St, spec: ShareSpec) -> String {
-    let token = rand_token(12);
-    let mut sh = st.shares.lock().await;
-    sh.retain(|_, s| s.expires > now_ms());
-    sh.insert(token.clone(), spec);
-    let _ = std::fs::write(shares_path(), serde_json::to_string(&*sh).unwrap_or_default());
-    token
+/// Store a share under `key` and return its token: the existing link for that key if it is
+/// still live (its content and expiry are updated), else a new one.
+pub(super) fn put_share<T: Serialize>(key: &str, kind: &str, title: &str, spec: &T, parent: Option<&str>, origin: &str, ttl_secs: i64) -> Result<String> {
+    let c = store::open()?;
+    let now = now_ms();
+    let token = store::share_by_key(&c, key, now)?.map(|s| s.token).unwrap_or_else(|| rand_token(12));
+    let s = store::Share {
+        token: token.clone(),
+        key: key.into(),
+        kind: kind.into(),
+        title: title.into(),
+        spec: serde_json::to_string(spec)?,
+        parent: parent.map(|p| p.to_string()),
+        origin: origin.into(),
+        created: now,
+        expires: now + ttl_secs * 1000,
+        views: 0,
+        last_view: None,
+    };
+    store::share_put(&c, &s)?;
+    Ok(token)
+}
+
+/// Remove the live share under `key`; returns how many links went (with charts inside).
+pub(super) fn revoke(key: &str) -> Result<usize> {
+    let c = store::open()?;
+    match store::share_by_key(&c, key, now_ms())? {
+        Some(s) => store::share_remove(&c, &s.token),
+        None => Ok(0),
+    }
+}
+
+/// The live share behind `token`, counting a view when `view` is set.
+pub(super) fn get_share(token: &str, view: bool) -> Option<store::Share> {
+    let c = store::open().ok()?;
+    let s = store::share_get(&c, token, now_ms()).ok()??;
+    if view {
+        let _ = store::share_viewed(&c, token, now_ms());
+    }
+    Some(s)
 }
 
 /// The public URL of `path`, starting the tunnel when wanted; JSON {url, local_url}.
@@ -157,24 +198,16 @@ pub(super) async fn start_tunnel(st: &St, port: u16) -> Result<String> {
     Ok(found)
 }
 
-pub(super) async fn chart_page(State(st): State<St>, Path(token): Path<String>) -> Response {
-    let sh = st.shares.lock().await;
-    match sh.get(&token) {
-        Some(s) if s.expires > now_ms() => {
-            let title = s.title.clone().unwrap_or_else(|| format!("{} · {}", s.id, s.tf));
-            Html(page(&title, "single", &block_html(&[(token.clone(), title.clone())]))).into_response()
-        }
-        _ => (StatusCode::NOT_FOUND, Html("<h3>This chart link has expired.</h3>")).into_response(),
+pub(super) async fn chart_page(Path(token): Path<String>) -> Response {
+    match get_share(&token, true).filter(|s| s.kind == "chart") {
+        Some(s) => Html(page(&s.title, "single", &block_html(&[(token.clone(), s.title.clone())]))).into_response(),
+        None => (StatusCode::NOT_FOUND, Html("<h3>This chart link has expired or was removed.</h3>")).into_response(),
     }
 }
 
 pub(super) async fn chart_data(State(st): State<St>, Path(token): Path<String>) -> Response {
-    let spec = {
-        let sh = st.shares.lock().await;
-        match sh.get(&token) {
-            Some(s) if s.expires > now_ms() => s.clone(),
-            _ => return err(StatusCode::NOT_FOUND, "expired"),
-        }
+    let Some(spec) = get_share(&token, false).filter(|s| s.kind == "chart").and_then(|s| serde_json::from_str::<ShareSpec>(&s.spec).ok()) else {
+        return err(StatusCode::NOT_FOUND, "expired");
     };
     // 10s cache per share so many viewers do not hammer providers.
     if let Some((t, v)) = st.cache.lock().await.get(&token) {

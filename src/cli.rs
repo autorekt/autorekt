@@ -31,6 +31,7 @@ const SHOW_HELP: &str = "WHAT is one of:
   funding [COINS]  funding across venues, annualized          prelaunch    pre-launch and pre-IPO perps
   odds             trending prediction markets                 news [TOPIC] headlines (markets, macro, crypto)
   calendar [CCY]   macro releases                              alerts       this machine's rule and monitor events
+  shares           links made with --share: what, views, expiry, URL
   ID               one series: text candles (or sparkline + table for single-value series),
                    then compressed earlier history, swings, levels, state, events and data checks
   ID ID ...        one row per id: last, changes, trend, flags
@@ -47,7 +48,9 @@ Examples:
   autorekt show NQ -i 15m --at 2026-10-30T20:00:00Z
   autorekt show BTC ETH 'RSP / SPY' --changes
   autorekt show BTC -i 15m --share
-  autorekt show report.md --share
+  autorekt show report.md --share            (again: updates the same link)
+  autorekt show report.md --share --ttl 0    (removes it)
+  autorekt show shares
 
 A report chart block:
   ```chart
@@ -200,9 +203,13 @@ pub struct ShowArgs {
     /// With --share: extra series drawn on their own scale.
     #[arg(long)]
     pub overlay: Vec<String>,
-    /// With --share: link lifetime.
+    /// With --share: link lifetime; 0 removes the link.
     #[arg(long, default_value = "7d")]
     pub ttl: String,
+    /// With --share: a separate link for the same chart or file (sharing it again under the same
+    /// name updates that link).
+    #[arg(long)]
+    pub name: Option<String>,
     /// With --share: link for this machine only (no tunnel).
     #[arg(long)]
     pub local: bool,

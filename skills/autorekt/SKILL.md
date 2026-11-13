@@ -64,5 +64,7 @@ VIX -i 1h -r 5d
 ````
 
 ```sh
-autorekt show report.md --share
+autorekt show report.md --share            # again later: updates the same link
+autorekt show report.md --share --ttl 0    # remove it
+autorekt show shares                       # every live link, views, expiry
 ```

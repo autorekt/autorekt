@@ -54,7 +54,7 @@ pub(super) async fn api_status(State(st): State<St>, h: HeaderMap) -> Response {
         })
         .collect();
     let monitors: Vec<Value> = st.monitors.lock().await.iter().map(|(n, m)| json!({"name": n, "state": m})).collect();
-    let shares = st.shares.lock().await.len();
+    let shares = store::shares(&c, now_ms()).map(|v| v.len()).unwrap_or(0);
     Json(json!({"pid": info.pid, "port": info.port, "started": info.started, "public_url": info.public_url, "rules": rules, "monitors": monitors, "shares": shares})).into_response()
 }
 

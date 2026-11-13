@@ -1,7 +1,7 @@
 //! Local SQLite store: events (rule firings, monitor alerts), recorded series (monitor
 //! `record()`, sampled metrics such as Hyperliquid OI), per-agent cursors for `diff`, and the
-//! fetch cache: the latest bars and quotes of every series read, when each was fetched, and which
-//! series were asked for recently (the daemon keeps those fresh).
+//! fetch cache: the latest bars and quotes of every series read, when each was fetched, which
+//! series were asked for recently (the daemon keeps those fresh), and shared links.
 
 use crate::model::{Bar, Event, MetricPoint, Ticker};
 use anyhow::Result;
@@ -32,7 +32,11 @@ pub fn open() -> Result<Connection> {
          CREATE TABLE IF NOT EXISTS fetches (key TEXT PRIMARY KEY, ok_at INTEGER, n INTEGER NOT NULL DEFAULT 0,
             err_at INTEGER, error TEXT);
          CREATE TABLE IF NOT EXISTS tickers (id TEXT PRIMARY KEY, json TEXT NOT NULL);
-         CREATE TABLE IF NOT EXISTS wanted (id TEXT PRIMARY KEY, at INTEGER NOT NULL);",
+         CREATE TABLE IF NOT EXISTS wanted (id TEXT PRIMARY KEY, at INTEGER NOT NULL);
+         CREATE TABLE IF NOT EXISTS shares (token TEXT PRIMARY KEY, key TEXT NOT NULL, kind TEXT NOT NULL,
+            title TEXT NOT NULL, spec TEXT NOT NULL, parent TEXT, origin TEXT NOT NULL, created INTEGER NOT NULL,
+            expires INTEGER NOT NULL, views INTEGER NOT NULL DEFAULT 0, last_view INTEGER);
+         CREATE INDEX IF NOT EXISTS shares_key ON shares(key);",
     )?;
     Ok(c)
 }
@@ -219,4 +223,83 @@ pub fn wanted_since(c: &Connection, since: i64) -> Result<Vec<String>> {
 /// Drop cached bars older than `before`.
 pub fn prune_bars(c: &Connection, before: i64) -> Result<usize> {
     Ok(c.execute("DELETE FROM bars WHERE ts < ?1", params![before])?)
+}
+
+/// A shared link: a chart (`spec` is its view) or a document (`spec` holds its markdown and
+/// chart tokens). Charts inside a document have `parent` set. `key` identifies the source, so
+/// sharing the same thing again updates the link instead of making a new one.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct Share {
+    pub token: String,
+    pub key: String,
+    pub kind: String,
+    pub title: String,
+    pub spec: String,
+    pub parent: Option<String>,
+    pub origin: String,
+    pub created: i64,
+    pub expires: i64,
+    pub views: i64,
+    pub last_view: Option<i64>,
+}
+
+fn row_share(r: &rusqlite::Row) -> rusqlite::Result<Share> {
+    Ok(Share {
+        token: r.get(0)?,
+        key: r.get(1)?,
+        kind: r.get(2)?,
+        title: r.get(3)?,
+        spec: r.get(4)?,
+        parent: r.get(5)?,
+        origin: r.get(6)?,
+        created: r.get(7)?,
+        expires: r.get(8)?,
+        views: r.get(9)?,
+        last_view: r.get(10)?,
+    })
+}
+
+const SHARE_COLS: &str = "token, key, kind, title, spec, parent, origin, created, expires, views, last_view";
+
+/// The live share with this key, if any.
+pub fn share_by_key(c: &Connection, key: &str, now: i64) -> Result<Option<Share>> {
+    Ok(c.query_row(&format!("SELECT {SHARE_COLS} FROM shares WHERE key = ?1 AND expires > ?2"), params![key, now], row_share).optional()?)
+}
+
+pub fn share_get(c: &Connection, token: &str, now: i64) -> Result<Option<Share>> {
+    Ok(c.query_row(&format!("SELECT {SHARE_COLS} FROM shares WHERE token = ?1 AND expires > ?2"), params![token, now], row_share).optional()?)
+}
+
+/// Insert or replace a share (keeping its views), and drop expired ones.
+pub fn share_put(c: &Connection, s: &Share) -> Result<()> {
+    c.execute("DELETE FROM shares WHERE expires <= ?1", params![s.created])?;
+    c.execute(
+        "INSERT INTO shares (token, key, kind, title, spec, parent, origin, created, expires) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9)
+         ON CONFLICT(token) DO UPDATE SET title = ?4, spec = ?5, expires = ?9",
+        params![s.token, s.key, s.kind, s.title, s.spec, s.parent, s.origin, s.created, s.expires],
+    )?;
+    Ok(())
+}
+
+/// Remove the charts inside a document share.
+pub fn share_drop_children(c: &Connection, token: &str) -> Result<()> {
+    c.execute("DELETE FROM shares WHERE parent = ?1", params![token])?;
+    Ok(())
+}
+
+/// Remove a share and the charts inside it; returns how many rows went.
+pub fn share_remove(c: &Connection, token: &str) -> Result<usize> {
+    Ok(c.execute("DELETE FROM shares WHERE token = ?1 OR parent = ?1", params![token])?)
+}
+
+pub fn share_viewed(c: &Connection, token: &str, at: i64) -> Result<()> {
+    c.execute("UPDATE shares SET views = views + 1, last_view = ?2 WHERE token = ?1", params![token, at])?;
+    Ok(())
+}
+
+/// Live top-level shares (not the charts inside documents), newest first.
+pub fn shares(c: &Connection, now: i64) -> Result<Vec<Share>> {
+    let mut st = c.prepare(&format!("SELECT {SHARE_COLS} FROM shares WHERE parent IS NULL AND expires > ?1 ORDER BY created DESC"))?;
+    let rows = st.query_map(params![now], row_share)?;
+    Ok(rows.filter_map(|r| r.ok()).collect())
 }
