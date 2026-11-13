@@ -25,6 +25,7 @@ mod api;
 mod loops;
 mod report;
 mod share;
+pub mod tunnel;
 mod warm;
 
 use api::*;
@@ -32,7 +33,6 @@ use loops::*;
 use report::*;
 use share::*;
 pub use report::{chart_blocks, ChartReq};
-pub use share::cloudflared_path;
 
 pub const SDK_PY: &str = include_str!("../../sdk/autorekt.py");
 
@@ -126,7 +126,7 @@ struct Shared {
     info: Mutex<Info>,
     cache: Mutex<HashMap<String, (i64, Value)>>,
     monitors: Mutex<HashMap<String, MonitorState>>,
-    tunnel: Mutex<Option<tokio::process::Child>>,
+    tunnel: Mutex<()>,
     shutdown: tokio::sync::Notify,
 }
 
@@ -160,16 +160,22 @@ pub async fn run() -> Result<()> {
     std::fs::create_dir_all(home.join("sdk"))?;
     std::fs::create_dir_all(logs())?;
     std::fs::write(home.join("sdk").join("autorekt.py"), SDK_PY)?;
-    let port = config::get().share_port.unwrap_or(0);
-    let listener = tokio::net::TcpListener::bind(("127.0.0.1", port)).await?;
+    let want = tunnel::port();
+    let listener = match tokio::net::TcpListener::bind(("127.0.0.1", want)).await {
+        Ok(l) => l,
+        // The port a quick tunnel pointed at is taken: serve elsewhere; the next share starts a new tunnel.
+        Err(_) if config::get().share_port.is_none() && want != 0 => tokio::net::TcpListener::bind(("127.0.0.1", 0)).await?,
+        Err(e) => return Err(e).with_context(|| format!("listening on port {want} (share_port)")),
+    };
     let port = listener.local_addr()?.port();
-    let info = Info { pid: std::process::id(), port, token: rand_token(16), started: now_ms(), public_url: config::get().share_base_url.clone() };
+    let external = config::get().share_base_url.clone().filter(|_| !tunnel::named());
+    let info = Info { pid: std::process::id(), port, token: rand_token(16), started: now_ms(), public_url: external };
     std::fs::write(info_path(), serde_json::to_string_pretty(&info)?)?;
     let st: St = Arc::new(Shared {
         info: Mutex::new(info.clone()),
         cache: Mutex::new(HashMap::new()),
         monitors: Mutex::new(HashMap::new()),
-        tunnel: Mutex::new(None),
+        tunnel: Mutex::new(()),
         shutdown: tokio::sync::Notify::new(),
     });
     log(&format!("daemon started pid={} port={}", info.pid, port));
@@ -194,26 +200,39 @@ pub async fn run() -> Result<()> {
     tokio::spawn(record_loop());
     tokio::spawn(liquidation_loop());
     tokio::spawn(warm::warm_loop());
+    tokio::spawn(resume_tunnel(st.clone(), port));
 
     let st2 = st.clone();
     let shutdown = async move {
         tokio::select! { _ = crate::os::stop_requested() => {}, _ = st2.shutdown.notified() => {} }
     };
     axum::serve(listener, app).with_graceful_shutdown(shutdown).await?;
-    // Cleanup: stop monitors and tunnel.
+    // Cleanup: stop monitors. The tunnel keeps running so its address survives a restart.
     for (_, m) in st.monitors.lock().await.iter() {
         if let Some(pid) = m.pid {
             crate::os::end_group(pid);
         }
-    }
-    if let Some(mut t) = st.tunnel.lock().await.take() {
-        let _ = t.kill().await;
     }
     if read_info().map_or(false, |i| i.pid == std::process::id()) {
         let _ = std::fs::remove_file(info_path());
     }
     log("daemon stopped");
     Ok(())
+}
+
+/// Take over the tunnel a previous daemon left running, or start the named tunnel.
+async fn resume_tunnel(st: St, port: u16) {
+    if st.info.lock().await.public_url.is_some() || config::get().share_no_tunnel {
+        return;
+    }
+    if let Some(u) = tunnel::adopt(port).await {
+        log(&format!("tunnel resumed: {u}"));
+        set_public_url(&st, &u).await;
+    } else if tunnel::named() {
+        if let Err(e) = start_tunnel(&st, port).await {
+            log(&format!("named tunnel failed: {e:#}"));
+        }
+    }
 }
 
 pub fn log(msg: &str) {

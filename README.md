@@ -484,6 +484,19 @@ Links survive restarts. Sharing the same file again updates the same link; `--na
 separate one, `--ttl 30d` sets how long it lives and `--ttl 0` removes it. `autorekt show shares`
 lists every live link with its views and expiry.
 
+The tunnel runs on its own, so a daemon restart keeps its random `trycloudflare.com` address (a
+reboot does not). For an address that never changes, create a Cloudflare named tunnel for a
+hostname on your domain that points at `http://localhost:8765`, save its token in a file, and set:
+
+```text
+# ~/.autorekt/config.yaml
+share_port: 8765
+share_base_url: https://charts.example.com
+share_tunnel_token_file: ~/.autorekt/tunnel.token
+```
+
+`autorekt daemon tunnel` shows the tunnel; `autorekt daemon tunnel stop` ends it.
+
 ## License
 
 MIT

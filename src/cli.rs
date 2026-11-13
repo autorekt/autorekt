@@ -102,10 +102,13 @@ Hook environment: AUTOREKT_RULE AUTOREKT_MESSAGE AUTOREKT_VALUE AUTOREKT_RHS AUT
 AUTOREKT_SEVERITY AUTOREKT_EXPR AUTOREKT_CONTEXT (recent candles) AUTOREKT_CHART_URL AUTOREKT_LABEL_<KEY>.";
 
 const DAEMON_HELP: &str = "Actions: status (default) start stop restart logs [MONITOR] install (systemd user service, Linux)
-run (foreground) tunnel (download cloudflared for --share links).
+run (foreground) tunnel [stop] (install cloudflared and show the tunnel for --share links, or stop it).
+
+The tunnel runs on its own: a quick tunnel keeps its trycloudflare.com address while the daemon
+restarts (not across reboots); a named tunnel keeps a fixed address of yours for good.
 
 Files in $AUTOREKT_HOME (default ~/.autorekt): config.yaml, aliases.yaml (ALIAS: id), rules/,
-monitors/ (Python monitors), autorekt.db, logs/, daemon.json.
+monitors/ (Python monitors), autorekt.db, logs/, daemon.json, tunnel.json.
 
 config.yaml keys:
   default_exchange: okx          where bare crypto aliases resolve
@@ -117,7 +120,8 @@ config.yaml keys:
   brief_odds: ['series:KXFEDDECISION', 'polymarket:<slug>']     odds shown by `show`
   default_hook: 'command'        hook for monitor alerts without their own
   hook_chart_url: true           pass AUTOREKT_CHART_URL to hooks
-  share_base_url / share_port / share_no_tunnel                 serving shared charts";
+  share_base_url / share_port / share_no_tunnel                 serving shared charts
+  share_tunnel_token_file: ~/.autorekt/tunnel.token             run a Cloudflare named tunnel (with share_base_url, share_port)";
 
 #[derive(Parser)]
 #[command(name = "autorekt", version, about = ABOUT, long_about = ABOUT)]
@@ -339,7 +343,7 @@ pub struct DaemonArgs {
     /// status, start, stop, restart, logs, install, run, tunnel.
     #[arg(default_value = "status")]
     pub action: String,
-    /// For logs: a monitor name.
+    /// For logs: a monitor name. For tunnel: stop.
     pub name: Option<String>,
     /// For logs: number of lines.
     #[arg(short = 'n', long, default_value_t = 40)]

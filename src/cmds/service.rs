@@ -1,5 +1,5 @@
 //! `daemon`: lifecycle (run, start, stop, restart, status, install as a systemd user
-//! service), logs of the daemon or a monitor, and installing cloudflared for shared charts.
+//! service), logs of the daemon or a monitor, and the tunnel for shared charts.
 
 use super::*;
 use crate::cli::DaemonArgs;
@@ -13,7 +13,7 @@ pub async fn daemon(a: DaemonArgs, g: &Global) -> Result<()> {
             };
             tail(&daemon::logs().join(file), a.lines)
         }
-        "tunnel" => share::install_cloudflared().await,
+        "tunnel" => share::tunnel(a.name.as_deref()).await,
         other => service(other, g).await,
     }
 }
@@ -53,6 +53,9 @@ async fn service(cmd: &str, g: &Global) -> Result<()> {
                 v["public_url"].as_str().unwrap_or("-"),
                 v["shares"]
             );
+            if let Some(t) = daemon::tunnel::read() {
+                println!("tunnel: {} {} up {}", t.kind, t.url, ago(t.started).replace(" ago", ""));
+            }
             println!("rules: {}", v["rules"].as_array().map(|a| a.len()).unwrap_or(0));
             for m in v["monitors"].as_array().cloned().unwrap_or_default() {
                 println!("monitor {}: pid {} restarts {}", m["name"].as_str().unwrap_or(""), m["state"]["pid"], m["state"]["restarts"]);

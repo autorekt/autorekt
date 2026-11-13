@@ -1,9 +1,8 @@
-//! Shareable charts: share specs (kept in the store, so links survive restarts), the cloudflared
-//! quick tunnel, the single-chart page and the chart data endpoint (with reports, the only
-//! routes that are public through the tunnel).
+//! Shareable charts: share specs (kept in the store, so links survive restarts), public URLs,
+//! the single-chart page and the chart data endpoint (with reports, the only routes that are
+//! public through the tunnel).
 
 use super::*;
-use tokio::io::AsyncBufReadExt;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ShareSpec {
@@ -148,54 +147,21 @@ pub(super) async fn public_url(st: &St, port: u16, tunnel: Option<bool>, path: &
     Ok(json!({"url": url, "local_url": local}))
 }
 
-pub fn cloudflared_path() -> Option<PathBuf> {
-    let name = format!("cloudflared{}", std::env::consts::EXE_SUFFIX);
-    let local = config::home().join("bin").join(&name);
-    if local.exists() {
-        return Some(local);
-    }
-    std::env::split_paths(&std::env::var_os("PATH")?).map(|d| d.join(&name)).find(|p| p.exists())
-}
-
+/// The public base URL, starting the tunnel if there is none yet.
 pub(super) async fn start_tunnel(st: &St, port: u16) -> Result<String> {
-    let mut guard = st.tunnel.lock().await;
+    let _guard = st.tunnel.lock().await;
     if let Some(u) = st.info.lock().await.public_url.clone() {
         return Ok(u);
     }
-    let bin = cloudflared_path().ok_or_else(|| anyhow!("cloudflared not installed; run `autorekt daemon tunnel`"))?;
-    let mut child = tokio::process::Command::new(bin)
-        .args(["tunnel", "--no-autoupdate", "--url", &format!("http://127.0.0.1:{port}")])
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::piped())
-        .kill_on_drop(true)
-        .spawn()?;
-    let stderr = child.stderr.take().ok_or_else(|| anyhow!("no stderr"))?;
-    let mut lines = tokio::io::BufReader::new(stderr).lines();
-    let found = tokio::time::timeout(Duration::from_secs(30), async {
-        while let Ok(Some(l)) = lines.next_line().await {
-            if let Some(i) = l.find("https://") {
-                let u: String = l[i..].split_whitespace().next().unwrap_or("").trim_end_matches('|').to_string();
-                if u.contains("trycloudflare.com") {
-                    return Some(u);
-                }
-            }
-        }
-        None
-    })
-    .await
-    .ok()
-    .flatten()
-    .ok_or_else(|| anyhow!("cloudflared did not report a URL within 30s"))?;
-    // Keep draining stderr so the process never blocks.
-    tokio::spawn(async move { while let Ok(Some(_)) = lines.next_line().await {} });
-    *guard = Some(child);
+    let url = tunnel::start(port).await?;
+    set_public_url(st, &url).await;
+    Ok(url)
+}
+
+pub(super) async fn set_public_url(st: &St, url: &str) {
     let mut info = st.info.lock().await;
-    info.public_url = Some(found.clone());
+    info.public_url = Some(url.to_string());
     let _ = std::fs::write(info_path(), serde_json::to_string_pretty(&*info).unwrap_or_default());
-    log(&format!("tunnel up: {found}"));
-    // Quick tunnels take a few seconds to become routable.
-    tokio::time::sleep(Duration::from_secs(3)).await;
-    Ok(found)
 }
 
 pub(super) async fn chart_page(Path(token): Path<String>) -> Response {

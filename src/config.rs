@@ -21,8 +21,11 @@ pub struct Config {
     pub boards: BTreeMap<String, Vec<String>>,
     /// Port of the chart server (0 = pick a free one).
     pub share_port: Option<u16>,
-    /// Public base URL for shared charts if you run your own tunnel/reverse proxy.
+    /// Public base URL for shared charts: your own tunnel or reverse proxy, or the named tunnel's address.
     pub share_base_url: Option<String>,
+    /// File holding a Cloudflare named-tunnel token: the daemon runs that tunnel, which serves
+    /// share_base_url and points at share_port.
+    pub share_tunnel_token_file: Option<String>,
     /// Disable starting a cloudflared quick tunnel for `share`.
     #[serde(default)]
     pub share_no_tunnel: bool,

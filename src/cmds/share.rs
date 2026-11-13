@@ -1,5 +1,6 @@
 //! `show ID --share`: publish an interactive chart through the daemon (and a cloudflared
-//! tunnel); `show shares` lists the links; `daemon tunnel` installs cloudflared.
+//! tunnel); `show shares` lists the links; `daemon tunnel` installs cloudflared and shows or
+//! stops the tunnel.
 
 use super::*;
 use crate::cli::ShowArgs;
@@ -74,11 +75,29 @@ fn until(ms: i64) -> String {
     }
 }
 
-pub async fn install_cloudflared() -> Result<()> {
-    if let Some(p) = daemon::cloudflared_path() {
-        println!("cloudflared already available at {}", p.display());
-        return Ok(());
+/// `daemon tunnel [stop]`: install cloudflared if needed and show the tunnel, or stop it.
+pub async fn tunnel(action: Option<&str>) -> Result<()> {
+    match action {
+        Some("stop") => {
+            println!("{}", if daemon::tunnel::stop() { "tunnel stopped" } else { "no tunnel running" });
+            Ok(())
+        }
+        Some(other) => bail!("unknown tunnel action '{other}' (use: daemon tunnel, daemon tunnel stop)"),
+        None => {
+            match daemon::tunnel::cloudflared_path() {
+                Some(p) => println!("cloudflared at {}", p.display()),
+                None => install_cloudflared().await?,
+            }
+            match daemon::tunnel::read() {
+                Some(t) => println!("{} tunnel {} -> port {}, up {}", t.kind, t.url, t.port, ago(t.started).replace(" ago", "")),
+                None => println!("no tunnel running (the next --share starts one)"),
+            }
+            Ok(())
+        }
     }
+}
+
+async fn install_cloudflared() -> Result<()> {
     let arch = match std::env::consts::ARCH {
         "x86_64" => "amd64",
         "aarch64" => "arm64",
