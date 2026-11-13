@@ -2,6 +2,7 @@
 
 mod cli;
 mod cmds;
+mod columns;
 mod config;
 mod daemon;
 mod expr;

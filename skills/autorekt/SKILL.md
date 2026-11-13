@@ -19,6 +19,8 @@ from public sources on this machine and never trades. If `autorekt` is not on PA
 autorekt show liquidity                  # repo vs IORB, swap spreads, TGA, reserves, credit
 autorekt show positioning                # CFTC, dealer gamma, put/call, ETF flows, short volume
 autorekt show sectors                    # also: fear rates commodities megacaps asia crypto
+autorekt show sectors --with 'chg(5d),chg(ytd),from_high(52w)'   # a table with the columns you pick
+autorekt show SPY QQQ IWM --from 2026-11-06 --to 2026-11-12       # change over a span
 autorekt show NQ -i 15m -r 1d            # one series: candles, swings, levels, events, data checks
 autorekt show 'RSP / SPY' -i 1d -r 120d  # any expression works where an id does
 autorekt why BTC -r 2d                   # the biggest move, what moved with it, dated news

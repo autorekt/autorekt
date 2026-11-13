@@ -12,6 +12,7 @@ mod search;
 mod service;
 mod share;
 mod show;
+mod table;
 mod view;
 mod watch;
 
