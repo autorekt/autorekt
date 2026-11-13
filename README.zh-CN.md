@@ -156,34 +156,21 @@ caveats: Yahoo and Cboe are ~15m delayed; SPX gamma assumes dealers long calls a
 
 ```text
 安装 autorekt（https://autorekt.com，源码在 https://github.com/autorekt/autorekt）。
-1. 先装预编译的二进制：Linux 或 macOS 上运行 `curl -fsSL https://autorekt.com/install.sh | sh`；
-   Windows 上在 PowerShell 里运行 `irm https://autorekt.com/install.ps1 | iex`，或在 CMD 里运行
-   `curl -fsSL https://autorekt.com/install.cmd -o install.cmd && install.cmd && del install.cmd`。
-2. 如果失败，就从源码编译：克隆仓库，运行 `cargo build --release`，把生成的二进制放到 PATH 上。
-   这台机器上已有的 Rust 工具链够新就直接用它。缺少或版本太旧的 Rust 工具链、C 编译器和其他
-   编译依赖，按人在这个系统上的正常做法安装：官方安装程序或系统的包管理器（例如 https://rustup.rs
-   的 rustup、build-essential、Xcode 命令行工具、Visual Studio Build Tools）。
+1. 先装预编译的二进制：Linux 或 macOS 上运行 `curl -fsSL https://autorekt.com/install.sh | sh`； Windows 上在 PowerShell 里运行 `irm https://autorekt.com/install.ps1 | iex`，或在 CMD 里运行`curl -fsSL https://autorekt.com/install.cmd -o install.cmd && install.cmd && del install.cmd`。
+2. 如果失败，就从源码编译：克隆仓库，运行 `cargo build --release`，把生成的二进制放到 PATH 上。这台机器上已有的 Rust 工具链够新就直接用它。缺少或版本太旧的 Rust 工具链、C 编译器和其他编译依赖，按人在这个系统上的正常做法安装：官方安装程序或系统的包管理器（例如 https://rustup.rs的 rustup、build-essential、Xcode 命令行工具、Visual Studio Build Tools）。
 3. 遇到任何问题都自己排查，直到一切正常；必要时可以修改代码，并告诉我改了什么。
 4. 运行 `autorekt show` 确认能用，然后从 `autorekt --help` 学习命令。
 ```
 
-安装之后，autorekt 完全在你自己的机器上运行，从不连接我们的任何服务器：不需要账号，没有遥测，不会向我们发送任何东西。数据直接从各个公开数据源本身获取（交易所、央行、统计机构、新闻源），只有在你分享图表时才会开一个 Cloudflare 隧道。它访问的每个网络地址都明文写在源码里，很容易验证；下面第二段提示词就会让你的 agent 去验证这一点。
-
-如果你非常在乎安全，可以改用下面这段：agent 会先审计整个仓库，把有风险的地方告诉你，再从审计过的源码编译安装。这会让安装变得很慢，也会消耗大量 token。
+- **数据不离开你的机器** 不需要账号、API 密钥，没有遥测。数据直接取自公开数据源，只有分享网页时才会开 Cloudflare 隧道。
+- **容易核实** autorekt 访问的每个网络地址都明文写在源码里。
+- **想先审计也可以** 用下面这段提示词，agent 会读完整个仓库、报告所有风险后再编译安装。会慢一些，也会消耗大量 token。
 
 ```text
-安装 autorekt 之前先审计它。克隆 https://github.com/autorekt/autorekt，读完整个仓库：Rust 源码、
-编译脚本、Cargo.toml 和 Cargo.lock 里的依赖、site/install/ 里的安装脚本，以及 GitHub 工作流。
-找出所有有风险的地方：它访问哪些网络地址、发送了什么；它在自己的目录（~/.autorekt）之外读写哪些
-文件；它会运行哪些命令（钩子、监控脚本、下载的 cloudflared）；本地 HTTP 服务暴露了什么；公网隧道；
-以及不常见或无人维护的依赖。特别核实“它从不连接作者运营的服务器”这一说法。把每个风险连同文件和行号、严重程度、能否关闭一起告诉我，然后等我同意。
-同意后用审计过的源码运行 `cargo build --release` 编译（需要时按正常方式安装 Rust 工具链），把二进制
-放到 PATH 上，再运行 `autorekt show` 确认能用。
+安装 autorekt 之前先审计它。克隆 https://github.com/autorekt/autorekt，读完整个仓库：Rust 源码、编译脚本、Cargo.toml 和 Cargo.lock 里的依赖、site/install/ 里的安装脚本，以及 GitHub 工作流。找出所有有风险的地方：它访问哪些网络地址、发送了什么；它在自己的目录（~/.autorekt）之外读写哪些文件；它会运行哪些命令（钩子、监控脚本、下载的 cloudflared）；本地 HTTP 服务暴露了什么；公网隧道；以及不常见或无人维护的依赖。特别核实“它从不连接作者运营的服务器”这一说法。把每个风险连同文件和行号、严重程度、能否关闭一起告诉我，然后等我同意。同意后用审计过的源码运行 `cargo build --release` 编译（需要时按正常方式安装 Rust 工具链），把二进制放到 PATH 上，再运行 `autorekt show` 确认能用。
 ```
 
-支持技能（skill）的 agent，比如 Claude Code，还可以加载 [skills/autorekt/SKILL.md](https://github.com/autorekt/autorekt/blob/main/skills/autorekt/SKILL.md)，它会告诉 agent 什么时候、怎样使用 autorekt。
-
-autorekt 只观察，从不交易，任何能执行 shell 命令的 agent 都能用。只用免费数据，在你自己的机器上从公开接口获取：不需要注册账号，也不需要 API 密钥。
+支持技能（skill）的 agent，比如 Claude Code，还可以加载 [skills/autorekt/SKILL.md](https://github.com/autorekt/autorekt/blob/main/skills/autorekt/SKILL.md)，它会告诉 agent 什么时候、怎样使用 autorekt。autorekt 只观察，从不交易。
 
 ## 瓶颈在数据，不在智力
 
@@ -411,9 +398,26 @@ time                value  BTC +1h     +4h    +24h
 
 agent 学用一个工具，靠的是模仿它以前被怎么用。所以接口尽量小：一件事一个动词，所有命令的选项含义一致，帮助和错误信息会告诉你下一步该做什么。
 
-- **`show`** 查看一切：简报、看板、K 线、某项指标、赔率、新闻、日历、你的提醒，或者一份 markdown 报告。`autorekt show liquidity`。`--view explain` 找到一次波动、同时在动的市场和相关新闻（`autorekt show BTC --view explain`）；`--view corr` 衡量资产之间如何联动。`--with` 选择表格的列（`autorekt show sectors --with 'chg(5d),chg(ytd),from_high(52w)'`），`--from`/`--to` 指定明确的区间，`--csv` 输出每个序列的每一根 K 线（`autorekt show SPY QQQ -i 1d -r 1y --csv`），`--md` 把表格输出为 Markdown。`--where`、`--sort`、`--top`、`--bottom` 筛选和排序表格；`@watchlist.txt` 从文件读取代码。公司基本面也可以作为列：`autorekt show hk.southbound --with 'pe,pb,dy' --where 'dy > 6 and pb < 0.8'`（港股和 A 股来自东方财富，美股来自 SEC 申报文件）。`autorekt show news 0788.HK` 列出一只股票的交易所公告和新闻；`autorekt show calendar NVDA AAPL` 列出即将到来的财报和派息日期。`lists` 列标出在美国限制名单上的股票（OFAC NS-CMIC 按代码匹配，美国国防部 1260H 名单按公司名匹配；不检查母公司和关联方）。`--adjust` 使用含股息的复权价格，`--vs` 指定 `beta()`、`corr()`、`upcap()`、`downcap()` 的基准（`autorekt show 0788.HK 2601.HK --vs 3033.HK --with 'beta(),upcap(),downcap()' -i 1M -r 5y --adjust`）。
+- **`show`** 查看一切：简报、看板、K 线、表格、journal、赔率、新闻、日历、你的提醒。`autorekt show liquidity`
 - **`search`** 查找一切：所有来源的品种代码、预测市场、新闻标题。`autorekt search swap --kind instruments`
 - **`watch`** 被叫醒：用普通表达式写规则，先回测再信任，由后台守护进程运行。`autorekt watch --wait`
+
+## 一行命令出表格
+
+多个代码、一个看板或一个列表就是一张表格。选项决定它有哪些列、保留哪些行、按什么排序。
+
+- **任选列** 任意窗口或两个日期之间的涨跌、距高点、最大回撤、波动率。`autorekt show sectors --with 'chg(5d),dd(1y)'`
+- **筛选和排序** 只保留满足条件的行，排序，取头尾。`autorekt show sectors --where 'chg(ytd) > 15' --sort 'chg(5d)' --top 5`
+- **公司基本面** 港股、A 股和美股的市盈率、市净率、股息率、派息比例和增长。`autorekt show hk.southbound --with 'pe,pb,dy' --where 'dy > 6'`
+- **对比基准** 贝塔、相关性、上行和下行捕获，可含股息。`autorekt show 0788.HK 2601.HK --vs 3033.HK --with 'beta(),upcap(),downcap()' -i 1M -r 5y --adjust`
+- **A 股板块和资金** 每个行业或概念板块及其资金流向。`autorekt show cn.industry --sort 'flow(5d)' --top 10`
+- **限制名单** 股票是否在 OFAC 的 NS-CMIC 名单或美国国防部的 1260H 名单上。`autorekt show 9988.HK 0788.HK --with lists`
+- **公告和日期** 一只股票的交易所公告和新闻，或下一次财报和派息日期。`autorekt show calendar NVDA AAPL`
+- **为什么会动** 找到最大的一次波动、同时在动的市场和新闻；或者资产之间的相关性。`autorekt show BTC --view explain`
+- **你自己的列表** 从文件读取代码，每行一个，任何能写代码的地方都能用。`autorekt show @watchlist.txt --with 'chg(5d),dy'`
+- **导出** 每个序列的每根 K 线导出为 CSV，任何表格导出为 Markdown。`autorekt show SPY QQQ -i 1d -r 1y --csv`
+- **任意区间** 指定开始和结束日期，用于图表或表格里的涨跌。`autorekt show SPY QQQ --from 2026-11-06 --to 2026-11-12`
+- **总回报** 加回股息的价格，用于图表、表格和 CSV。`autorekt show 0788.HK -i 1w -r 5y --adjust`
 
 ## 所有值得读的免费数据源
 
@@ -421,9 +425,11 @@ agent 学用一个工具，靠的是模仿它以前被怎么用。所以接口�
 
 - **加密货币** OKX、Binance、Hyperliquid（包括 7×24 小时交易的美股永续合约）、Deribit 期权和 DVOL、Coinbase、DefiLlama 稳定币、Farside 的现货 ETF 资金流
 - **市场行情** Yahoo Finance 的股票、ETF、指数、期货、外汇和大宗商品；Cboe 期权链，用于交易商伽马、偏度、看跌看涨比和当日到期期权
-- **利率和美元流动性** FRED；纽约联储的 SOFR 分布、回购便利用量和一级交易商持仓；美国财政部的每日现金余额和国债拍卖；来自公开申报的互换交易的 SOFR 互换利率（DTCC）；欧洲央行；日本财务省
+- **美元流动性** 纽约联储的 SOFR 分布、回购便利用量和交易商持仓；美国财政部的每日现金余额和国债拍卖；来自申报交易的 SOFR 互换利率（DTCC）
+- **利率** FRED、欧洲央行、日本财务省
 - **市场仓位** CFTC 持仓报告、FINRA 场外卖空成交、资金费率、未平仓合约、多空比和爆仓
-- **中国和香港** 人民币中间价和 SHIBOR（中国外汇交易中心）；国债收益率、两融余额、沪深港通资金和涨跌家数、A 股和港股行情、行业和概念板块及其资金流向（东方财富，`autorekt show cn.industry --sort 'flow(5d)' --top 10`）；港元拆息和银行体系总结余（香港金管局）
+- **中国和香港** 人民币中间价和 SHIBOR（中国外汇交易中心）；国债收益率、两融余额、沪深港通资金、行情、板块和资金流向（东方财富）；港元拆息（香港金管局）
+- **公司** 基本面和公告（东方财富、港交所披露易、SEC EDGAR），财报和派息日期（纳斯达克），美国限制名单（OFAC、联邦公报）
 - **赔率、新闻和日历** Polymarket、Kalshi、财经和加密新闻源、Google 新闻搜索、ForexFactory 日历、CNN 和加密恐惧贪婪指数
 
 ## 分享分析结果
@@ -441,20 +447,36 @@ nyfed:SOFR - fred:IORB -i 1d -r 90d
 ```
 ````
 
-链接在重启后仍然有效。再次分享同一个文件会更新同一个链接；`--name` 另开一个链接，`--ttl 30d` 设定有效期，`--ttl 0` 删除链接。`autorekt show shares` 列出所有有效链接及其访问次数和到期时间。
+- **链接长期有效** 重启后链接仍然有效，再次分享同一个文件会更新同一个链接。`autorekt show shares`
+- **到期或删除** `--ttl 30d` 设定有效期，`--ttl 0` 删除链接。`autorekt show report.md --share --ttl 0`
+- **固定地址** 守护进程重启时隧道地址不变；用 Cloudflare 命名隧道可以永久固定地址（见 `autorekt daemon --help`）。`autorekt daemon tunnel`
 
-隧道作为独立进程运行，所以守护进程重启时随机的 `trycloudflare.com` 地址保持不变（机器重启后会变）。如果需要永不改变的地址，在 Cloudflare 上为你域名下的一个主机名创建命名隧道，指向 `http://localhost:8765`，把 token 存进一个文件，然后设置：
+## 记一本交易日志
 
-```text
-# ~/.autorekt/config.yaml
-share_port: 8765
-share_base_url: https://charts.example.com
-share_tunnel_token_file: ~/.autorekt/tunnel.token
+journal 是一份 markdown 文档，在你的笔记旁边用竖线表格记录交易。autorekt 读取它并实时显示。
+
+````markdown
+## Hong Kong dividends
+
+```trades account=company
+| date       | action | id      | qty | price | ccy | fee |
+| 2026-11-12 | buy    | 0788.HK | 500 | 9.05  | HKD | 27  |
 ```
 
-`autorekt daemon tunnel` 显示隧道状态；`autorekt daemon tunnel stop` 停止隧道。
+```orders account=company
+| ref     | side | id      | qty | limit | placed     |
+| tower-2 | buy  | 0788.HK | 500 | 8.60  | 2026-11-11 |
+```
 
-journal 是一份 markdown 文档，用竖线表格记录你的交易：```` ```trades ````（date action id qty price ccy fee）、```` ```positions ````、```` ```orders ````（ref side id qty limit placed）和 ```` ```dates ````。`autorekt show journal.md` 显示实时的持仓、现金、盈亏、挂单和日期，并先列出需要处理的事：价格已经到达的挂单、本周的日期。`--in CNY` 换算币种，`--at 2026-06-30` 按当天之前的交易回看，show 块里的 `@this` 代表 journal 里的所有代码。分享时，journal 默认不显示数量和金额，加 `--show-amounts` 才显示。`autorekt watch journal.md` 把其中未成交的挂单和日期（以及 ```` ```watch ```` 块里的规则）变成提醒，`--changes` 只显示新出现的需要处理的事；`account=sim` 表格里的挂单（可带止损和目标价，用 ```` ```instruments ```` 块设定合约乘数）会按每日 K 线自动成交和平仓，用于模拟交易。
+```show
+@this --with 'chg(5d),dy,lists'
+```
+````
+
+- **实时持仓** 成本、现金、盈亏和占比由交易记录推出；`--in` 换算成一种货币，`--at` 回看任意一天。`autorekt show journal.md --in CNY`
+- **需要处理的事** 已到达的挂单和本周的日期排在最前面；`--changes` 只显示新出现的，`watch` 把它们变成提醒。`autorekt show journal.md --changes`
+- **模拟交易** `account=sim` 表格里的挂单按每日 K 线自动成交、止损和止盈。`autorekt show sim.md`
+- **分享时保护隐私** 分享的 journal 默认不显示数量和金额，加 `--show-amounts` 才显示。`autorekt show journal.md --share`
 
 ## 许可证
 
