@@ -197,7 +197,7 @@ async fn row(item: &str, cols: &[Column], ctx: &Ctx) -> (String, Result<Vec<Opti
     let e = ctx.end.unwrap_or_else(now_ms);
     let stats = cols.iter().any(|c| c.bench().is_some());
     let start = cols.iter().map(|c| c.reach(e)).chain(ctx.span.map(|(a, _)| a - 10 * 86_400_000)).chain(stats.then_some(ctx.stats_from)).min().unwrap_or(e);
-    let needs_bars = cols.iter().any(|c| !matches!(c.func, Func::Expr(_) | Func::Metric(_)));
+    let needs_bars = cols.iter().any(|c| !matches!(c.func, Func::Expr(_) | Func::Metric(_) | Func::Lists));
     let source = if ctx.adjust && needs_bars {
         match adjusted(&id) {
             Ok(a) => a,
@@ -238,6 +238,10 @@ async fn row(item: &str, cols: &[Column], ctx: &Ctx) -> (String, Result<Vec<Opti
                 ctx.benches.get(c.bench().unwrap()).and_then(|b| c.eval_vs(&own, b, tf.ms()))
             }
             Func::Flow(_) => bars.last().and_then(|b| c.eval_flow(&flows, b.timestamp, span)),
+            Func::Lists => match crate::company::lists(&id).await {
+                Ok(v) => Some(v),
+                Err(err) => return (label, Err(err.context("lists"))),
+            },
             Func::Metric(m) => match fundamental(&id, m).await {
                 Ok(v) => v,
                 Err(err) => return (label, Err(err.context(c.label.clone()))),

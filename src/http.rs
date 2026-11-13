@@ -43,7 +43,7 @@ fn explain(status: u16, url: &str, body: &str) -> anyhow::Error {
 /// Hosts that throttle hard get at most one request per this many ms from this process.
 fn pace_ms(url: &str) -> Option<u64> {
     let host = url.split('/').nth(2).unwrap_or("");
-    host.ends_with("eastmoney.com").then_some(1000)
+    (host.ends_with("eastmoney.com") || host.ends_with("hkexnews.hk")).then_some(1000)
 }
 
 /// Wait for this host's turn.

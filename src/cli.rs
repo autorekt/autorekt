@@ -56,6 +56,7 @@ Examples:
   autorekt show hk.southbound --with 'last,pe,pb,dy,mcap' --where 'dy > 6 and pb < 0.8' --sort dy
   autorekt show 600519.SS#pe -i 1d -r 5y                   a fundamental's history (A-shares)
   autorekt show news 0788.HK AAPL -r 14d                    filings and headlines about these stocks
+  autorekt show @holdings.txt --with lists                  US restriction lists (NS-CMIC, 1260H)
   autorekt show calendar @holdings.txt                      their coming earnings and dividends
   autorekt show eastmoney:90.BK0475 -i 1d                   an A-share board (eastmoney market.code ids)
   autorekt show sectors --with 'chg(5d),chg(ytd)' --sort 'chg(5d)' --top 3 --bottom 3
@@ -245,7 +246,8 @@ pub struct ShowArgs {
     /// A column: an expression where $ is the series ('ta.rsi($,14)'), or a table column
     /// (last, chg(5d), chg(ytd), chg(2024-09-13..2024-10-07), high(52w), low(52w), from_high(52w),
     /// from_low(52w), dd(5y), vol(20d), vol_ratio(20), flow(5d) (Eastmoney ids); company figures: pe, pb,
-    /// dy, dps, payout, mcap, eps, bvps, roe, debt_ratio, rev_yoy, np_yoy; against a benchmark over -r at -i: beta(SPY),
+    /// dy, dps, payout, mcap, eps, bvps, roe, debt_ratio, rev_yoy, np_yoy; lists (OFAC NS-CMIC by
+    /// ticker, DoD 1260H by name: parents and affiliates are not checked); against a benchmark over -r at -i: beta(SPY),
     /// corr(SPY), upcap(SPY), downcap(SPY)). Several ids or a board make a table with
     /// these columns; a leading + adds them to the board's own.
     #[arg(long)]

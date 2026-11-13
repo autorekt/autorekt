@@ -82,6 +82,7 @@ check "eastmoney board set"     "flow(5d)"            show cn.industry --top 3
 check "fundamentals"            "pb"                  show yahoo:0788.HK yahoo:600519.SS --with 'pe,pb'
 check "company calendar"        "calendar  NVDA"      show calendar NVDA AAPL
 check "company news"            "hkexnews"            show news yahoo:0788.HK -r 60d
+check "restriction lists"       "NS-CMIC"             show yahoo:0941.HK yahoo:0788.HK --with lists
 check "ids from a file"         "QQQ"                 show "@$AUTOREKT_HOME/list.txt"
 "$BIN" daemon stop >/dev/null 2>&1
 rm -rf "$AUTOREKT_HOME"

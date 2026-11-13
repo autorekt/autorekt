@@ -65,6 +65,14 @@ async fn chart(symbol: &str, iv: &str, p1: i64, p2: i64) -> Result<Value> {
     v["chart"]["result"].get(0).cloned().ok_or_else(|| anyhow::anyhow!("yahoo: no data for {symbol}"))
 }
 
+/// The company or instrument name Yahoo gives a symbol ("Alibaba Group Holding Limited").
+pub async fn long_name(symbol: &str) -> Result<String> {
+    let end = now_ms();
+    let r = chart(symbol, "1d", end - 5 * 86_400_000, end).await?;
+    let m = &r["meta"];
+    m["longName"].as_str().or(m["shortName"].as_str()).map(String::from).ok_or_else(|| anyhow!("yahoo: no name for {symbol}"))
+}
+
 fn max_span_ms(iv: &str) -> i64 {
     let day = 86_400_000;
     match iv {

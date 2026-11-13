@@ -41,6 +41,8 @@ pub enum Func {
     DownCap(String),
     /// A company fundamental (pe, pb, dy, ...): the id's metric of that name, latest value.
     Metric(String),
+    /// The US restriction lists the stock is on (NS-CMIC, 1260H).
+    Lists,
     /// An expression; its latest value is shown.
     Expr(String),
 }
@@ -89,6 +91,9 @@ pub fn parse(spec: &str) -> Result<Column> {
     if s == "last" {
         return Ok(Column { label, func: Func::Last });
     }
+    if s == "lists" {
+        return Ok(Column { label, func: Func::Lists });
+    }
     if crate::fundamentals::METRICS.contains(&s) {
         return Ok(Column { label, func: Func::Metric(s.to_string()) });
     }
@@ -108,7 +113,7 @@ pub fn parse(spec: &str) -> Result<Column> {
         Some(("flow", w)) => Func::Flow(window(w)?),
         Some(("vol_ratio", n)) => Func::VolRatio(n.trim().parse().map_err(|_| anyhow::anyhow!("vol_ratio(N): N is a number of days, e.g. vol_ratio(20)"))?),
         _ if s.contains('$') => Func::Expr(s.to_string()),
-        _ => bail!("unknown column '{s}': use last, chg(5d), chg(ytd), chg(2024-09-13..2024-10-07), high(52w), low(52w), from_high(52w), from_low(52w), dd(5y), vol(20d), vol_ratio(20), flow(5d), a fundamental ({}), beta(SPY), corr(SPY), upcap(SPY), downcap(SPY), or an expression with $ such as 'ta.rsi($,14)'", crate::fundamentals::HELP),
+        _ => bail!("unknown column '{s}': use last, chg(5d), chg(ytd), chg(2024-09-13..2024-10-07), high(52w), low(52w), from_high(52w), from_low(52w), dd(5y), vol(20d), vol_ratio(20), flow(5d), a fundamental ({}), lists, beta(SPY), corr(SPY), upcap(SPY), downcap(SPY), or an expression with $ such as 'ta.rsi($,14)'", crate::fundamentals::HELP),
     };
     Ok(Column { label, func })
 }
@@ -248,7 +253,7 @@ impl Column {
                 let avg = bars[k - 1 - n..k - 1].iter().map(|x| x.volume).sum::<f64>() / *n as f64;
                 (avg > 0.0).then(|| last.volume / avg)
             }
-            Func::Metric(_) | Func::Flow(_) | Func::Expr(_) | Func::Beta(_) | Func::Corr(_) | Func::UpCap(_) | Func::DownCap(_) => None,
+            Func::Lists | Func::Metric(_) | Func::Flow(_) | Func::Expr(_) | Func::Beta(_) | Func::Corr(_) | Func::UpCap(_) | Func::DownCap(_) => None,
         }
     }
 
@@ -268,6 +273,7 @@ impl Column {
             Func::Vol(_) | Func::UpCap(_) | Func::DownCap(_) => format!("{v:.0}%"),
             Func::Beta(_) | Func::Corr(_) => format!("{v:+.2}"),
             Func::Flow(_) => format!("{v:+.2}bn"),
+            Func::Lists => crate::lists::label(v),
             Func::Metric(m) if matches!(m.as_str(), "dy" | "payout" | "roe" | "debt_ratio") => format!("{v:.1}%"),
             Func::Metric(m) if matches!(m.as_str(), "rev_yoy" | "np_yoy") => format!("{v:+.1}%"),
             Func::Metric(m) if m == "mcap" => crate::render::fmt_qty(v),

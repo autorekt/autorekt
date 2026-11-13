@@ -31,6 +31,7 @@ autorekt show cn.industry --sort 'flow(5d)' --top 10 --bottom 10   # A-share boa
 autorekt show 0788.HK 2601.HK AAPL --with 'pe,pb,dy,payout,roe'      # company figures (US needs sec_contact in config.yaml)
 autorekt show news 0788.HK -r 14d                         # a stock's exchange filings and headlines
 autorekt show calendar NVDA AAPL                          # coming earnings and dividend dates
+autorekt show 0788.HK 9988.HK --with lists                # US restriction lists: OFAC NS-CMIC, DoD 1260H
 autorekt show 0788.HK 2601.HK --vs 3033.HK --with 'beta(),upcap(),downcap()' -i 1M -r 5y --adjust
 autorekt search fed december             # find ids, prediction markets and news
 autorekt show SPY TLT -i 1d -r 1y --csv  # every bar of each series, for your own analysis

@@ -48,6 +48,16 @@ async fn hkex_stock(code: &str) -> Result<(i64, String)> {
     Ok((s["stockId"].as_i64().unwrap_or(0), s["name"].as_str().unwrap_or(code).to_string()))
 }
 
+/// Which US restriction lists the stock is on (see lists.rs).
+pub async fn lists(id: &str) -> Result<f64> {
+    let ticker = match market(id)? {
+        ("hk", code) => format!("{} HK", code.trim_start_matches('0')),
+        (_, t) => format!("{t} US"),
+    };
+    let symbol = crate::ids::parse(id)?.symbol;
+    crate::lists::check(&ticker, &crate::providers::yahoo::long_name(&symbol).await?).await
+}
+
 /// The company's name, for headline searches.
 pub async fn name(id: &str) -> Result<String> {
     match market(id)? {
