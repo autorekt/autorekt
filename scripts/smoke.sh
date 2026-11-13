@@ -60,14 +60,17 @@ wait $waiter
 check "watch wait fires"        "smoke_rule"          cat-file "$AUTOREKT_HOME/wait.out"
 check "show alerts"             "smoke_rule"          show alerts -r 1h
 check "show changes"            "diff for"            show crypto --changes --as smoke
-printf '# Smoke report\n\nText.\n\n```chart\nBTC -i 1h -r 2d\nRSP / SPY -i 1d -r 30d\n```\n' > "$AUTOREKT_HOME/r.md"
-check "report preview"          "[chart] RSP / SPY"   show "$AUTOREKT_HOME/r.md"
+printf '# Smoke report\n\nText.\n\n```show\nBTC -i 1h -r 2d\nRSP / SPY -i 1d -r 30d\n```\n' > "$AUTOREKT_HOME/r.md"
+check "report preview"          "[show] RSP / SPY"   show "$AUTOREKT_HOME/r.md"
 check "report publish"          "/r/"                 show "$AUTOREKT_HOME/r.md" --share --local
 check "csv several series"      "yahoo:QQQ,"          show yahoo:SPY yahoo:QQQ -i 1d -n 3 --csv
 check "markdown table"          "| --- |"             show yahoo:SPY yahoo:QQQ --md
 check "table columns"           "from_high(52w)"      show sectors --with 'chg(5d),from_high(52w)'
 check "table span"              "chg"                 show yahoo:SPY yahoo:QQQ --from 2026-01-02 --to 2026-01-09
 check "board plus column"       "chg(ytd)"            show megacaps --with '+chg(ytd)'
+printf '# J\n\n```trades\n| date | action | id | qty | price | ccy |\n| 2026-01-05 | buy | yahoo:SPY | 2 | 600 | USD |\n```\n\n```orders\n| ref | side | id | qty | limit | placed |\n| o1 | buy | yahoo:QQQ | 1 | 1 | 2026-11-01 |\n```\n' > "$AUTOREKT_HOME/j.md"
+check "journal"                 "needs attention"     show "$AUTOREKT_HOME/j.md"
+check "journal ids"             "yahoo:QQQ"           show "@$AUTOREKT_HOME/j.md" --with last
 check "shares list"             "Smoke report"        show shares
 check "share remove"            "link removed"        show "$AUTOREKT_HOME/r.md" --share --ttl 0
 check "explain move"            "what else moved"     show BTC --view explain -r 2d

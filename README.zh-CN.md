@@ -428,14 +428,14 @@ agent 学用一个工具，靠的是模仿它以前被怎么用。所以接口�
 
 ## 分享分析结果
 
-agent 可以把分析发布成网页：`autorekt show report.md --share` 会把带图表块的 markdown 变成一个带实时交互图表的页面，通过 Cloudflare 隧道从你的机器上提供访问。
+agent 可以把分析发布成网页：`autorekt show report.md --share` 会把带show 块的 markdown 变成一个带实时交互图表的页面，通过 Cloudflare 隧道从你的机器上提供访问。
 
 ````markdown
 ## Dollar liquidity is tightening
 
 Repo is trading above the rate the Fed pays on reserves.
 
-```chart
+```show
 nyfed:SOFR - fred:IORB -i 1d -r 90d
 (dtcc:SOFR10Y - fred:DGS10) * 100 -i 1d -r 180d
 ```
@@ -453,6 +453,8 @@ share_tunnel_token_file: ~/.autorekt/tunnel.token
 ```
 
 `autorekt daemon tunnel` 显示隧道状态；`autorekt daemon tunnel stop` 停止隧道。
+
+journal 是一份 markdown 文档，用竖线表格记录你的交易：```` ```trades ````（date action id qty price ccy fee）、```` ```positions ````、```` ```orders ````（ref side id qty limit placed）和 ```` ```dates ````。`autorekt show journal.md` 显示实时的持仓、现金、盈亏、挂单和日期，并先列出需要处理的事：价格已经到达的挂单、本周的日期。`--in CNY` 换算币种，`--at 2026-06-30` 按当天之前的交易回看，show 块里的 `@this` 代表 journal 里的所有代码。分享时，journal 默认不显示数量和金额，加 `--show-amounts` 才显示。
 
 ## 许可证
 

@@ -59,7 +59,11 @@ pub async fn show(mut a: ShowArgs, g: &Global, o: &Opts) -> Result<()> {
         Some(w) if a.what.len() == 1 && w.chars().all(|c| c.is_ascii_lowercase()) && !ids::is_known_alias(w) => {
             bail!("'{w}' is not a view or a known alias. Views: {}. For anything else: autorekt search {w}", view_names().join(", "))
         }
-        Some(f) if a.what.len() == 1 && f.ends_with(".md") => report::report(f, &a, g, o).await,
+        Some(f) if a.what.len() == 1 && f.ends_with(".md") && a.share => report::report(f, &a, g).await,
+        Some(f) if a.what.len() == 1 && f.ends_with(".md") => {
+            let md = std::fs::read_to_string(f).with_context(|| format!("reading {f}"))?;
+            journal::show(f, &md, &a, g, o).await
+        }
         Some(_) if table::wanted_table(&a, a.what.len() > 1) && !g.csv => table::table(&a.what, "ids", &a, g, o).await,
         Some(_) if a.what.len() == 1 || a.view.as_deref() == Some("chart") => {
             if a.what.len() > 1 {
@@ -95,11 +99,15 @@ async fn one(a: &ShowArgs, g: &Global, o: &Opts) -> Result<()> {
 }
 
 /// The words of `show` with each @FILE replaced by the ids in it (one per line; lines starting
-/// with # are comments).
+/// with # are comments), or for a journal (.md) the ids it holds or has orders for.
 fn expand(what: &[String]) -> Result<Vec<String>> {
     let mut out = Vec::new();
     for w in what {
         match w.strip_prefix('@') {
+            Some(path) if path.ends_with(".md") => {
+                let text = std::fs::read_to_string(path).with_context(|| format!("reading {path}"))?;
+                out.extend(journal::ids_of(&crate::journal::parse(&text)?)?);
+            }
             Some(path) => {
                 let text = std::fs::read_to_string(path).with_context(|| format!("reading {path}"))?;
                 out.extend(text.lines().map(str::trim).filter(|l| !l.is_empty() && !l.starts_with('#')).map(|l| l.to_string()));

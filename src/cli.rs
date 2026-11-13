@@ -39,10 +39,14 @@ const SHOW_HELP: &str = "WHAT is one of:
   ID               one series: text candles (or sparkline + table for single-value series),
                    then compressed earlier history, swings, levels, state, events and data checks
   ID ID ...        one row per id: last, changes, trend, flags (with --csv: every bar of each)
-  @FILE            the ids in a file, one per line (also inside a list: SPY @more.txt)
-  FILE.md          a markdown report; each line of a ```chart block is a chart in show syntax
-                   (several lines = one chart with tabs). Prints a text preview; --share publishes
-                   it as a page with live interactive charts.
+  @FILE            the ids in a file, one per line (also inside a list: SPY @more.txt); @JOURNAL.md:
+                   the ids a journal holds or has orders for
+  FILE.md          a markdown document; each line of a ```show block runs as `autorekt show ...`
+                   (on a page, a line naming one id is a live chart; several lines = tabs). A journal
+                   also has ```trades, ```positions, ```orders and ```dates pipe tables: holdings,
+                   cash, orders and dates shown live, with what needs attention first (--in CNY,
+                   --at DATE). --share publishes the document as a page (journal amounts only with
+                   --show-amounts).
 
 Examples:
   autorekt show
@@ -75,8 +79,8 @@ Examples:
   autorekt show report.md --share --ttl 0    (removes it)
   autorekt show shares
 
-A report chart block:
-  ```chart
+A show block:
+  ```show
   BTC -i 1h -r 7d --overlay BTC#open_interest
   RSP / SPY -i 1d -r 120d
   ```";
@@ -268,6 +272,12 @@ pub struct ShowArgs {
     /// With --share: link for this machine only (no tunnel).
     #[arg(long)]
     pub local: bool,
+    /// With --share of a journal: include quantities, costs and values (left out by default).
+    #[arg(long)]
+    pub show_amounts: bool,
+    /// A journal's values in one currency, e.g. CNY.
+    #[arg(long = "in")]
+    pub in_ccy: Option<String>,
 }
 
 #[derive(Args)]
@@ -384,7 +394,7 @@ pub struct DaemonArgs {
     pub lines: usize,
 }
 
-/// Parse one line of a ```chart block ("BTC -i 1h -r 7d --overlay BTC#open_interest") with the
+/// Parse one line of a ```show block ("BTC -i 1h -r 7d --overlay BTC#open_interest") with the
 /// same options as `show`; quotes group words as in a shell.
 pub fn parse_chart_line(line: &str) -> Result<ShowArgs> {
     let mut words: Vec<String> = vec!["autorekt".into(), "show".into()];

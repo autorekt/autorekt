@@ -11,6 +11,7 @@ mod freshness;
 mod fundamentals;
 mod http;
 mod ids;
+mod journal;
 mod lists;
 mod model;
 mod os;

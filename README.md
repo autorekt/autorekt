@@ -465,7 +465,7 @@ autorekt says so instead of quietly showing something else.
 ## Share what it found
 
 An agent can publish its analysis as a web page: `autorekt show report.md --share` turns markdown
-with chart blocks into a page with live, interactive charts, served from your machine through a
+with show blocks into a page with live, interactive charts, served from your machine through a
 Cloudflare tunnel.
 
 ````markdown
@@ -473,7 +473,7 @@ Cloudflare tunnel.
 
 Repo is trading above the rate the Fed pays on reserves.
 
-```chart
+```show
 nyfed:SOFR - fred:IORB -i 1d -r 90d
 (dtcc:SOFR10Y - fred:DGS10) * 100 -i 1d -r 180d
 ```
@@ -495,6 +495,14 @@ share_tunnel_token_file: ~/.autorekt/tunnel.token
 ```
 
 `autorekt daemon tunnel` shows the tunnel; `autorekt daemon tunnel stop` ends it.
+
+A journal is a markdown document that also keeps your records in pipe tables: ```` ```trades ````
+(date action id qty price ccy fee), ```` ```positions ````, ```` ```orders ```` (ref side id qty limit
+placed) and ```` ```dates ````. `autorekt show journal.md` shows it with live holdings, cash,
+gains, orders and dates, and lists first what needs attention: an order the price has reached,
+or a date this week. `--in CNY` converts values, `--at 2026-06-30` replays the trades up to a date,
+and `@this` in a show block stands for the journal's ids. Shared, a journal leaves out quantities
+and amounts unless you add `--show-amounts`.
 
 ## License
 

@@ -64,17 +64,18 @@ its environment. `autorekt watch --help` lists the expression functions.
 
 ## Share a report
 
-Write markdown with chart blocks, one chart per line in `show` syntax, then publish it as a page
+Write markdown with show blocks, one chart per line in `show` syntax, then publish it as a page
 with live charts:
 
 ````markdown
-```chart
+```show
 BTC -i 1h -r 7d --overlay BTC#open_interest
 VIX -i 1h -r 5d
 ```
 ````
 
 ```sh
+autorekt show journal.md                   # a journal: live holdings, orders, dates, what needs attention
 autorekt show report.md --share            # again later: updates the same link
 autorekt show report.md --share --ttl 0    # remove it
 autorekt show shares                       # every live link, views, expiry
