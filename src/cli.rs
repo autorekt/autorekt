@@ -53,6 +53,7 @@ Examples:
   autorekt show BTC --view explain -r 2d                 the biggest move, what moved with it, news
   autorekt show GOLD --view explain --at 2026-10-30T14:00:00Z --window 6h
   autorekt show SPX NDX BTC GOLD US10Y --view corr -r 30d
+  autorekt show 0788.HK 2601.HK 1339.HK --vs 3033.HK --with 'beta(),upcap(),downcap()' -i 1M -r 5y --adjust
   autorekt show 'fred:SOFR - fred:IORB' -i 1d -r 90d
   autorekt show NQ -i 15m --at 2026-10-30T20:00:00Z
   autorekt show BTC ETH 'RSP / SPY' --changes
@@ -206,6 +207,12 @@ pub struct ShowArgs {
     /// Keep the last N rows (with --top: both ends).
     #[arg(long)]
     pub bottom: Option<usize>,
+    /// Prices adjusted for dividends and splits (total return; Yahoo ids, daily bars).
+    #[arg(long)]
+    pub adjust: bool,
+    /// Benchmark for the beta(), corr(), upcap() and downcap() columns.
+    #[arg(long)]
+    pub vs: Option<String>,
     /// Start of an explicit span (with --to, default now): the chart's window, or the change a table shows.
     #[arg(long)]
     pub from: Option<String>,
@@ -226,7 +233,8 @@ pub struct ShowArgs {
     pub news: bool,
     /// A column: an expression where $ is the series ('ta.rsi($,14)'), or a table column
     /// (last, chg(5d), chg(ytd), chg(2024-09-13..2024-10-07), high(52w), low(52w), from_high(52w),
-    /// from_low(52w), dd(5y), vol(20d), vol_ratio(20)). Several ids or a board make a table with
+    /// from_low(52w), dd(5y), vol(20d), vol_ratio(20); against a benchmark over -r at -i: beta(SPY),
+    /// corr(SPY), upcap(SPY), downcap(SPY)). Several ids or a board make a table with
     /// these columns; a leading + adds them to the board's own.
     #[arg(long)]
     pub with: Vec<String>,

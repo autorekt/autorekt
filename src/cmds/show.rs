@@ -57,7 +57,7 @@ pub async fn show(mut a: ShowArgs, g: &Global, o: &Opts) -> Result<()> {
             }
             one(&a, g, o).await
         }
-        Some(_) if g.csv => view::csv_many(&a.what.iter().map(|id| series(&a, id)).collect::<Vec<_>>(), o).await,
+        Some(_) if g.csv => view::csv_many(&a.what.iter().map(|id| series_of(&a, id)).collect::<Result<Vec<_>>>()?, o).await,
         Some(_) => {
             if a.changes {
                 alerts::diff(&a.agent, &a.what, "ids", g, o).await
@@ -71,7 +71,7 @@ pub async fn show(mut a: ShowArgs, g: &Global, o: &Opts) -> Result<()> {
 /// A single id or expression: a prediction market, a shared link, or a chart.
 async fn one(a: &ShowArgs, g: &Global, o: &Opts) -> Result<()> {
     let target = &a.what[0];
-    let s = series(a, target);
+    let s = series_of(a, target)?;
     if a.share {
         return share::share(&s, a, g).await;
     }
@@ -108,6 +108,18 @@ fn series(a: &ShowArgs, id: &str) -> view::Series {
         at = Some(end.to_string());
     }
     view::Series { id: id.to_string(), interval: a.interval.clone().unwrap_or_else(|| "1h".into()), limit: a.limit, range, at, news: a.news, with: a.with.clone(), context: true }
+}
+
+/// The series an id names, adjusted for dividends and splits with --adjust.
+fn series_of(a: &ShowArgs, id: &str) -> Result<view::Series> {
+    let mut s = series(a, id);
+    if a.adjust {
+        s.id = table::adjusted(id)?;
+        if a.interval.is_none() {
+            s.interval = "1d".into();
+        }
+    }
+    Ok(s)
 }
 
 fn hours(a: &ShowArgs, default: i64) -> Result<i64> {

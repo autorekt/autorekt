@@ -75,6 +75,8 @@ check "correlations"            "correlation"         show BTC ETH --view corr -
 check "correlation breaks"      "breaks:"             show BTC ETH GOLD --view corr -r 60d
 check "table where and sort"    "of 16 rows"          show sectors --where 'chg(ytd) > -100' --sort 'chg(5d)' --top 3
 printf 'SPY\n# comment\nQQQ\n' > "$AUTOREKT_HOME/list.txt"
+check "dividend adjusted"       "adj_close"           show yahoo:SPY --adjust -r 30d
+check "beta against benchmark"  "beta()"              show yahoo:QQQ yahoo:IWM --vs yahoo:SPY --with 'beta(),upcap()' -r 1y
 check "ids from a file"         "QQQ"                 show "@$AUTOREKT_HOME/list.txt"
 "$BIN" daemon stop >/dev/null 2>&1
 rm -rf "$AUTOREKT_HOME"
