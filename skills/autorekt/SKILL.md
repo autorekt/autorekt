@@ -23,8 +23,10 @@ autorekt show sectors --with 'chg(5d),chg(ytd),from_high(52w)'   # a table with 
 autorekt show SPY QQQ IWM --from 2026-11-06 --to 2026-11-12       # change over a span
 autorekt show NQ -i 15m -r 1d            # one series: candles, swings, levels, events, data checks
 autorekt show 'RSP / SPY' -i 1d -r 120d  # any expression works where an id does
-autorekt why BTC -r 2d                   # the biggest move, what moved with it, dated news
-autorekt why SPX BTC GOLD US10Y -r 30d   # correlations and which pairs broke
+autorekt show BTC --view explain -r 2d                     # the biggest move, what moved with it, dated news
+autorekt show SPX BTC GOLD US10Y --view corr -r 30d         # correlations and which pairs broke
+autorekt show sectors --where 'chg(ytd) > 15' --sort 'chg(5d)'   # filter and sort a table
+autorekt show @watchlist.txt                               # the ids in a file, one per line
 autorekt search fed december             # find ids, prediction markets and news
 autorekt show SPY TLT -i 1d -r 1y --csv  # every bar of each series, for your own analysis
 ```

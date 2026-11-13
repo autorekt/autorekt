@@ -195,7 +195,7 @@ autorekt 把它们汇集成一个为模型设计的统一视图：数字优先�
 - **北京在托人民币吗？** 离岸人民币比人民银行每天公布的中间价强约 490 个点，旁边是 SHIBOR、中国国债收益率、两融余额和南向资金。`autorekt show asia`
 - **交易商会平抑下一次波动，还是放大它？** 标普 500 的交易商伽马为每 1% 波动 +540 亿美元，25 delta 偏度为 4.6 个波动率点，当天标普期权成交量的 65% 来自当日到期的合约。`autorekt show cboe:SPX#gex`
 - **市场给美联储定价了什么？** Kalshi 给 12 月加息 80% 的概率；联邦基金期货隐含 11 月 3.88%、12 月 4.03%。`autorekt show kalshi:KXFEDDECISION-26DEC`
-- **刚才为什么会动？** 11 月 4 日以太坊在四小时内上涨 5.3%，同一时间原油下跌 6.4%（6 个标准差），标普 500 上涨 1.8%，高收益债走强：这是宏观的风险偏好回升，不是加密圈的新闻。`autorekt why ETH`
+- **刚才为什么会动？** 11 月 4 日以太坊在四小时内上涨 5.3%，同一时间原油下跌 6.4%（6 个标准差），标普 500 上涨 1.8%，高收益债走强：这是宏观的风险偏好回升，不是加密圈的新闻。`autorekt show ETH --view explain`
 - **谁在买？** 现货 ETF 资金流、按交易者类型划分的期货仓位、场外卖空成交、加密资金费率和多空比。`autorekt show positioning`
 
 ## 你的 agent 看到什么
@@ -273,15 +273,15 @@ data quality  1 bar(s) span more than 8x the median range (daily)
 
 ### 为什么会动？
 
-`why` 找到这次波动，衡量同一时间窗口里其他每个市场的波动有多不寻常，并把带时间的新闻放在旁边。
+`--view explain` 找到这次波动，衡量同一时间窗口里其他每个市场的波动有多不寻常，并把带时间的新闻放在旁边。
 很多资产一起动，是宏观因素；只有它自己在动，是个别因素。
 
 <details>
-<summary><code>autorekt why ETH</code></summary>
+<summary><code>autorekt show ETH --view explain</code></summary>
 
 ```
-$ autorekt why ETH
-why ETH  window 2026-11-04 13:00 .. 2026-11-04 17:00 UTC  move +5.25%
+$ autorekt show ETH --view explain
+explain ETH  window 2026-11-04 13:00 .. 2026-11-04 17:00 UTC  move +5.25%
 okx:ETH/USDT:USDT  1h  UTC  11-04 09:00..11-04 18:00  scale 2308.5..2451.1 (1 char = 4.6023)
 time     open    high     low   close   chg%    vol  |2308.5                    2451.1|
 09:00  2322.4  2323.9  2314.5  2321.6  -0.03  82.0k  | --░                            |
@@ -407,13 +407,12 @@ time                value  BTC +1h     +4h    +24h
 
 </details>
 
-## 四个动词
+## 三个动词
 
 agent 学用一个工具，靠的是模仿它以前被怎么用。所以接口尽量小：一件事一个动词，所有命令的选项含义一致，帮助和错误信息会告诉你下一步该做什么。
 
-- **`show`** 查看一切：简报、看板、K 线、某项指标、赔率、新闻、日历、你的提醒，或者一份 markdown 报告。`autorekt show liquidity`。`--with` 选择表格的列（`autorekt show sectors --with 'chg(5d),chg(ytd),from_high(52w)'`），`--from`/`--to` 指定明确的区间，`--csv` 输出每个序列的每一根 K 线（`autorekt show SPY QQQ -i 1d -r 1y --csv`），`--md` 把表格输出为 Markdown。
+- **`show`** 查看一切：简报、看板、K 线、某项指标、赔率、新闻、日历、你的提醒，或者一份 markdown 报告。`autorekt show liquidity`。`--view explain` 找到一次波动、同时在动的市场和相关新闻（`autorekt show BTC --view explain`）；`--view corr` 衡量资产之间如何联动。`--with` 选择表格的列（`autorekt show sectors --with 'chg(5d),chg(ytd),from_high(52w)'`），`--from`/`--to` 指定明确的区间，`--csv` 输出每个序列的每一根 K 线（`autorekt show SPY QQQ -i 1d -r 1y --csv`），`--md` 把表格输出为 Markdown。`--where`、`--sort`、`--top`、`--bottom` 筛选和排序表格；`@watchlist.txt` 从文件读取代码。
 - **`search`** 查找一切：所有来源的品种代码、预测市场、新闻标题。`autorekt search swap --kind instruments`
-- **`why`** 解释波动：找到它，衡量同一窗口里还有什么在动，找出带时间的新闻。给多个代码时：相关性和失效的关系。`autorekt why BTC`
 - **`watch`** 被叫醒：用普通表达式写规则，先回测再信任，由后台守护进程运行。`autorekt watch --wait`
 
 ## 所有值得读的免费数据源

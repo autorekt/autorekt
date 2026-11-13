@@ -6,7 +6,23 @@ use crate::cli::ShowArgs;
 
 const VIEWS: &[&str] = &["funding", "prelaunch", "odds", "news", "calendar", "alerts", "shares"];
 
-pub async fn show(a: ShowArgs, g: &Global, o: &Opts) -> Result<()> {
+pub async fn show(mut a: ShowArgs, g: &Global, o: &Opts) -> Result<()> {
+    a.what = expand(&a.what)?;
+    match a.view.as_deref() {
+        None | Some("chart") | Some("table") => {}
+        Some("explain") => {
+            let [id] = a.what.as_slice() else { bail!("--view explain takes one id or expression, e.g. autorekt show BTC --view explain") };
+            return analysis::explain(id, &a, g, o).await;
+        }
+        Some("corr") => {
+            let items = match a.what.as_slice() {
+                [one] if config::board(one).is_some() => config::board(one).unwrap(),
+                list => list.to_vec(),
+            };
+            return analysis::correlations(items, &a, g, o).await;
+        }
+        Some(v) => bail!("unknown --view '{v}' (chart, table, corr, explain)"),
+    }
     let first = a.what.first().map(|s| s.as_str());
     let rest: Vec<String> = a.what.iter().skip(1).cloned().collect();
     match first {
@@ -35,7 +51,12 @@ pub async fn show(a: ShowArgs, g: &Global, o: &Opts) -> Result<()> {
         }
         Some(f) if a.what.len() == 1 && f.ends_with(".md") => report::report(f, &a, g, o).await,
         Some(_) if table::wanted_table(&a, a.what.len() > 1) && !g.csv => table::table(&a.what, "ids", &a, g, o).await,
-        Some(_) if a.what.len() == 1 => one(&a, g, o).await,
+        Some(_) if a.what.len() == 1 || a.view.as_deref() == Some("chart") => {
+            if a.what.len() > 1 {
+                bail!("--view chart shows one id; several ids make a board or a table");
+            }
+            one(&a, g, o).await
+        }
         Some(_) if g.csv => view::csv_many(&a.what.iter().map(|id| series(&a, id)).collect::<Vec<_>>(), o).await,
         Some(_) => {
             if a.changes {
@@ -61,6 +82,22 @@ async fn one(a: &ShowArgs, g: &Global, o: &Opts) -> Result<()> {
         }
     }
     view::chart(&s, g, o).await
+}
+
+/// The words of `show` with each @FILE replaced by the ids in it (one per line; lines starting
+/// with # are comments).
+fn expand(what: &[String]) -> Result<Vec<String>> {
+    let mut out = Vec::new();
+    for w in what {
+        match w.strip_prefix('@') {
+            Some(path) => {
+                let text = std::fs::read_to_string(path).with_context(|| format!("reading {path}"))?;
+                out.extend(text.lines().map(str::trim).filter(|l| !l.is_empty() && !l.starts_with('#')).map(|l| l.to_string()));
+            }
+            None => out.push(w.clone()),
+        }
+    }
+    Ok(out)
 }
 
 /// The series an id names, with --from/--to as the window when given.

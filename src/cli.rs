@@ -1,4 +1,4 @@
-//! Command-line interface: four verbs for agents (show, search, why, watch) plus `daemon`.
+//! Command-line interface: three verbs for agents (show, search, watch) plus `daemon`.
 //! The first argument says what; options mean the same thing in every command.
 
 use crate::cmds;
@@ -8,9 +8,9 @@ use clap::{Args, Parser, Subcommand};
 
 const ABOUT: &str = "autorekt — market observation for agents. Start with: autorekt show
 
-  show    read anything: briefing, boards, charts, odds, news, calendar, alerts
+  show    read anything: briefing, boards, charts, tables, odds, news, calendar, alerts,
+          why a move happened (--view explain) and how assets relate (--view corr)
   search  find anything: ids, tickers, prediction markets, news
-  why     explain: a move (one id), or how assets relate and which pairs broke from it (several ids)
   watch   get alerted: rules, backtests, waiting, Python monitors
   daemon  background service (starts by itself when needed)
 
@@ -35,6 +35,7 @@ const SHOW_HELP: &str = "WHAT is one of:
   ID               one series: text candles (or sparkline + table for single-value series),
                    then compressed earlier history, swings, levels, state, events and data checks
   ID ID ...        one row per id: last, changes, trend, flags (with --csv: every bar of each)
+  @FILE            the ids in a file, one per line (also inside a list: SPY @more.txt)
   FILE.md          a markdown report; each line of a ```chart block is a chart in show syntax
                    (several lines = one chart with tabs). Prints a text preview; --share publishes
                    it as a page with live interactive charts.
@@ -47,6 +48,11 @@ Examples:
   autorekt show sectors --with 'chg(5d)','chg(ytd)','from_high(52w)'
   autorekt show SPY QQQ IWM --from 2026-11-06 --to 2026-11-12
   autorekt show megacaps --with '+chg(ytd)'
+  autorekt show sectors --with 'chg(5d),chg(ytd)' --sort 'chg(5d)' --top 3 --bottom 3
+  autorekt show @watchlist.txt --where 'from_high(52w) < -20' --sort '-chg(ytd)'
+  autorekt show BTC --view explain -r 2d                 the biggest move, what moved with it, news
+  autorekt show GOLD --view explain --at 2026-10-30T14:00:00Z --window 6h
+  autorekt show SPX NDX BTC GOLD US10Y --view corr -r 30d
   autorekt show 'fred:SOFR - fred:IORB' -i 1d -r 90d
   autorekt show NQ -i 15m --at 2026-10-30T20:00:00Z
   autorekt show BTC ETH 'RSP / SPY' --changes
@@ -71,16 +77,6 @@ Examples:
   autorekt search anthropic --kind instruments
   autorekt search binance hack --kind news -r 3d
   autorekt search --check";
-
-const WHY_HELP: &str = "One id: the biggest move in the range (or the move --at a time), what else moved in the
-same window as z-scores, and dated news. Several ids: their correlation matrix. No ids: the
-correlation matrix of the main cross-asset set.
-
-Examples:
-  autorekt why BTC
-  autorekt why GOLD --at 2026-10-30T14:00:00Z --window 6h
-  autorekt why SPX NDX BTC GOLD US10Y -r 30d
-  autorekt why";
 
 const WATCH_HELP: &str = "Rules are expressions that fire when true; the daemon evaluates them and runs your hook.
 
@@ -161,15 +157,12 @@ pub struct Global {
 
 #[derive(Subcommand)]
 enum Cmd {
-    /// Read anything: briefing, boards, charts, odds, news, calendar, alerts.
+    /// Read anything: briefing, boards, charts, tables, odds, news, calendar, alerts, explanations.
     #[command(after_help = SHOW_HELP)]
     Show(ShowArgs),
     /// Find anything: ids, tickers, prediction markets, news.
     #[command(after_help = SEARCH_HELP)]
     Search(SearchArgs),
-    /// Explain a move, or how assets relate.
-    #[command(after_help = WHY_HELP)]
-    Why(WhyArgs),
     /// Get alerted: rules, backtests, waiting, Python monitors.
     #[command(after_help = WATCH_HELP)]
     Watch(WatchArgs),
@@ -182,6 +175,10 @@ enum Cmd {
 pub struct ShowArgs {
     /// What to show (see below).
     pub what: Vec<String>,
+    /// How to show it: chart, table, corr (correlations and broken pairs) or explain (the biggest
+    /// move, what moved with it, dated news). Default: a chart for one id, a board for several.
+    #[arg(long)]
+    pub view: Option<String>,
     /// Timeframe of bars.
     #[arg(short = 'i', long)]
     pub interval: Option<String>,
@@ -194,6 +191,21 @@ pub struct ShowArgs {
     /// Look at the past: the view ends at this time.
     #[arg(long)]
     pub at: Option<String>,
+    /// With --view explain: the window around the move.
+    #[arg(long, default_value = "4h")]
+    pub window: String,
+    /// Keep table rows that pass, e.g. 'chg(5d) > 2 and from_high(52w) > -10' (or id == "SPY").
+    #[arg(long = "where")]
+    pub filter: Option<String>,
+    /// Order table rows by a column, largest first; a leading - sorts smallest first.
+    #[arg(long, allow_hyphen_values = true)]
+    pub sort: Option<String>,
+    /// Keep the first N rows (by --sort, else the first column).
+    #[arg(long)]
+    pub top: Option<usize>,
+    /// Keep the last N rows (with --top: both ends).
+    #[arg(long)]
+    pub bottom: Option<usize>,
     /// Start of an explicit span (with --to, default now): the chart's window, or the change a table shows.
     #[arg(long)]
     pub from: Option<String>,
@@ -252,23 +264,6 @@ pub struct SearchArgs {
     /// Without a query: probe each source.
     #[arg(long)]
     pub check: bool,
-}
-
-#[derive(Args)]
-pub struct WhyArgs {
-    pub ids: Vec<String>,
-    /// Timeframe of bars (default 1h for a move, 1d for correlations).
-    #[arg(short = 'i', long)]
-    pub interval: Option<String>,
-    /// How far back to look (default 7d for a move, 60d for correlations).
-    #[arg(short = 'r', long)]
-    pub range: Option<String>,
-    /// Time of the move to explain (default: the biggest move in the range).
-    #[arg(long)]
-    pub at: Option<String>,
-    /// Window around the move.
-    #[arg(long, default_value = "4h")]
-    pub window: String,
 }
 
 #[derive(Args)]
@@ -414,7 +409,6 @@ pub async fn run() -> i32 {
         Ok(o) => match cli.cmd {
             Cmd::Show(a) => cmds::show(a, &cli.g, &o).await,
             Cmd::Search(a) => cmds::search(a, &cli.g, &o).await,
-            Cmd::Why(a) => cmds::why(a, &cli.g, &o).await,
             Cmd::Watch(a) => cmds::watch(a, &cli.g, &o).await,
             Cmd::Daemon(a) => cmds::daemon(a, &cli.g).await,
         },

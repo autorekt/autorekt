@@ -222,7 +222,7 @@ answer with data instead of guesses (numbers from November 5, 2026):
 - **Is Beijing leaning on the yuan?** Offshore yuan trades about 490 pips stronger than the PBoC's daily fixing, next to SHIBOR, China's bond yields, margin debt and southbound flows. `autorekt show asia`
 - **Will dealers calm the next move or feed it?** SPX dealer gamma is +$54bn per 1% move, 25-delta skew 4.6 vol points, and 65% of the session's SPX option volume was in same-day expiries. `autorekt show cboe:SPX#gex`
 - **What is priced for the Fed?** Kalshi gives 80% to a December hike; fed funds futures imply 3.88% for November and 4.03% for December. `autorekt show kalshi:KXFEDDECISION-26DEC`
-- **Why did that just move?** Ether rose 5.3% in four hours on November 4 while oil fell 6.4% (6 standard deviations), the S&P 500 rose 1.8% and high yield rallied: a macro risk-on move, not crypto news. `autorekt why ETH`
+- **Why did that just move?** Ether rose 5.3% in four hours on November 4 while oil fell 6.4% (6 standard deviations), the S&P 500 rose 1.8% and high yield rallied: a macro risk-on move, not crypto news. `autorekt show ETH --view explain`
 - **Who is buying?** Spot ETF flows, futures positioning by trader type, off-exchange short volume, crypto funding and long/short ratios. `autorekt show positioning`
 
 ## What your agent sees
@@ -304,15 +304,15 @@ data quality  1 bar(s) span more than 8x the median range (daily)
 
 ### Why did it move?
 
-`why` finds the move, scores how unusual every other market's move was in the same window, and
+`--view explain` finds the move, scores how unusual every other market's move was in the same window, and
 puts dated news next to it. A move shared by many assets is macro; a move alone is idiosyncratic.
 
 <details>
-<summary><code>autorekt why ETH</code></summary>
+<summary><code>autorekt show ETH --view explain</code></summary>
 
 ```
-$ autorekt why ETH
-why ETH  window 2026-11-04 13:00 .. 2026-11-04 17:00 UTC  move +5.25%
+$ autorekt show ETH --view explain
+explain ETH  window 2026-11-04 13:00 .. 2026-11-04 17:00 UTC  move +5.25%
 okx:ETH/USDT:USDT  1h  UTC  11-04 09:00..11-04 18:00  scale 2308.5..2451.1 (1 char = 4.6023)
 time     open    high     low   close   chg%    vol  |2308.5                    2451.1|
 09:00  2322.4  2323.9  2314.5  2321.6  -0.03  82.0k  | --░                            |
@@ -441,14 +441,13 @@ time                value  BTC +1h     +4h    +24h
 
 </details>
 
-## Four verbs
+## Three verbs
 
 Agents learn a tool by imitating how it was used before, so the interface stays small: one verb
 per job, the same options everywhere, and help and error messages that say what to do next.
 
-- **`show`** Read anything: the briefing, boards, charts, a metric, odds, news, the calendar, your alerts, or a markdown report. `autorekt show liquidity`. `--with` picks the columns of a table (`autorekt show sectors --with 'chg(5d),chg(ytd),from_high(52w)'`), `--from`/`--to` set an explicit span, `--csv` gives every bar of each series (`autorekt show SPY QQQ -i 1d -r 1y --csv`) and `--md` prints tables as Markdown.
+- **`show`** Read anything: the briefing, boards, charts, a metric, odds, news, the calendar, your alerts, or a markdown report. `autorekt show liquidity`. `--view explain` finds a move, what moved with it and the news (`autorekt show BTC --view explain`); `--view corr` measures how assets move together. `--with` picks the columns of a table (`autorekt show sectors --with 'chg(5d),chg(ytd),from_high(52w)'`), `--from`/`--to` set an explicit span, `--csv` gives every bar of each series (`autorekt show SPY QQQ -i 1d -r 1y --csv`) and `--md` prints tables as Markdown. `--where`, `--sort`, `--top` and `--bottom` filter and order a table; `@watchlist.txt` reads ids from a file.
 - **`search`** Find anything: instrument ids across every source, prediction markets, headlines. `autorekt search swap --kind instruments`
-- **`why`** Explain a move: find it, measure what else moved in the same window, pull dated news. With several ids: correlations and broken relationships. `autorekt why BTC`
 - **`watch`** Get woken: rules in plain expressions, backtested before they are trusted, run by a background daemon. `autorekt watch --wait`
 
 ## Every free source worth reading

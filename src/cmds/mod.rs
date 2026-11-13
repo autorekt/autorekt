@@ -1,4 +1,4 @@
-//! The five commands (show, search, why, watch, daemon) and the views and helpers behind them.
+//! The commands (show, search, watch, daemon) and the views and helpers behind them.
 
 mod alerts;
 mod analysis;
@@ -16,7 +16,6 @@ mod table;
 mod view;
 mod watch;
 
-pub use analysis::why;
 pub use search::search;
 pub use service::daemon;
 pub use show::show;
