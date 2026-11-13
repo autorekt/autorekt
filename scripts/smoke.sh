@@ -8,7 +8,7 @@ pass=0; fail=0; net=0
 # A source that cannot be reached, refuses this network or rate-limits it is not a bug in
 # autorekt: such checks pass and are listed as network problems. Anything else that misses
 # the expected output fails.
-NETWORK='cannot reach|throttles|error sending request|timed out|HTTP 403|HTTP 405|HTTP 429|HTTP 451|HTTP 5[0-9][0-9]|geo-restricted|access denied'
+NETWORK='cannot reach|throttles|handshake|error sending request|timed out|HTTP 403|HTTP 405|HTTP 429|HTTP 451|HTTP 5[0-9][0-9]|geo-restricted|access denied'
 check() {  # check "<description>" <expected substring> <command...>
   local desc=$1 want=$2; shift 2
   local out
@@ -49,7 +49,7 @@ check "show news"               " "                   show news -n 3
 check "show calendar"           "calendar"            show calendar
 check "show funding"            "okx"                 show funding BTC
 check "show unknown view"       "not a view"          show foo
-check "watch backtest"          "backtest"            watch 'pct(BTC, "1h") < -1' --test --tf 5m -r 3d
+check "watch backtest"          "backtest"            watch 'pct(BTC, "1h") < -1' --test -i 5m -r 3d
 "$BIN" daemon start >/dev/null
 "$BIN" watch --wait --timeout 120s > "$AUTOREKT_HOME/wait.out" 2>&1 &
 waiter=$!
@@ -60,14 +60,19 @@ wait $waiter
 check "watch wait fires"        "smoke_rule"          cat-file "$AUTOREKT_HOME/wait.out"
 check "show alerts"             "smoke_rule"          show alerts -r 1h
 check "show changes"            "diff for"            show crypto --changes --as smoke
-printf '# Smoke report\n\nText.\n\n```chart\nBTC -i 1h -r 2d\nRSP / SPY -i 1d -r 30d\n```\n' > "$AUTOREKT_HOME/r.md"
-check "report preview"          "[chart] RSP / SPY"   show "$AUTOREKT_HOME/r.md"
+printf '# Smoke report\n\nText.\n\n```show\nBTC -i 1h -r 2d\nRSP / SPY -i 1d -r 30d\n```\n' > "$AUTOREKT_HOME/r.md"
+check "report preview"          "[show] RSP / SPY"   show "$AUTOREKT_HOME/r.md"
 check "report publish"          "/r/"                 show "$AUTOREKT_HOME/r.md" --share --local
 check "csv several series"      "yahoo:QQQ,"          show yahoo:SPY yahoo:QQQ -i 1d -n 3 --csv
 check "markdown table"          "| --- |"             show yahoo:SPY yahoo:QQQ --md
 check "table columns"           "from_high(52w)"      show sectors --with 'chg(5d),from_high(52w)'
 check "table span"              "chg"                 show yahoo:SPY yahoo:QQQ --from 2026-01-02 --to 2026-01-09
 check "board plus column"       "chg(ytd)"            show megacaps --with '+chg(ytd)'
+printf '# J\n\n```trades\n| date | action | id | qty | price | ccy |\n| 2026-01-05 | buy | yahoo:SPY | 2 | 600 | USD |\n```\n\n```orders\n| ref | side | id | qty | limit | placed |\n| o1 | buy | yahoo:QQQ | 1 | 1 | 2026-11-01 |\n```\n' > "$AUTOREKT_HOME/j.md"
+check "journal"                 "needs attention"     show "$AUTOREKT_HOME/j.md"
+check "journal changes"         "changes since"       show "$AUTOREKT_HOME/j.md" --changes --as smoke
+check "journal alerts"          "rules from"          watch "$AUTOREKT_HOME/j.md"
+check "journal ids"             "yahoo:QQQ"           show "@$AUTOREKT_HOME/j.md" --with last
 check "shares list"             "Smoke report"        show shares
 check "share remove"            "link removed"        show "$AUTOREKT_HOME/r.md" --share --ttl 0
 check "explain move"            "what else moved"     show BTC --view explain -r 2d
@@ -79,6 +84,10 @@ check "dividend adjusted"       "adj_close"           show yahoo:SPY --adjust -r
 check "beta against benchmark"  "beta()"              show yahoo:QQQ yahoo:IWM --vs yahoo:SPY --with 'beta(),upcap()' -r 1y
 check "eastmoney quote"         "summary"             show eastmoney:1.600519 -i 1d -n 5
 check "eastmoney board set"     "flow(5d)"            show cn.industry --top 3
+check "fundamentals"            "pb"                  show yahoo:0788.HK yahoo:600519.SS --with 'pe,pb'
+check "company calendar"        "calendar  NVDA"      show calendar NVDA AAPL
+check "company news"            "hkexnews"            show news yahoo:0788.HK -r 60d
+check "restriction lists"       "NS-CMIC"             show yahoo:0941.HK yahoo:0788.HK --with lists
 check "ids from a file"         "QQQ"                 show "@$AUTOREKT_HOME/list.txt"
 "$BIN" daemon stop >/dev/null 2>&1
 rm -rf "$AUTOREKT_HOME"

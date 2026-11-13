@@ -28,6 +28,10 @@ autorekt show SPX BTC GOLD US10Y --view corr -r 30d         # correlations and w
 autorekt show sectors --where 'chg(ytd) > 15' --sort 'chg(5d)'   # filter and sort a table
 autorekt show @watchlist.txt                               # the ids in a file, one per line
 autorekt show cn.industry --sort 'flow(5d)' --top 10 --bottom 10   # A-share boards by fund flow (also cn.concept, hk.southbound)
+autorekt show 0788.HK 2601.HK AAPL --with 'pe,pb,dy,payout,roe'      # company figures (US needs sec_contact in config.yaml)
+autorekt show news 0788.HK -r 14d                         # a stock's exchange filings and headlines
+autorekt show calendar NVDA AAPL                          # coming earnings and dividend dates
+autorekt show 0788.HK 9988.HK --with lists                # US restriction lists: OFAC NS-CMIC, DoD 1260H
 autorekt show 0788.HK 2601.HK --vs 3033.HK --with 'beta(),upcap(),downcap()' -i 1M -r 5y --adjust
 autorekt search fed december             # find ids, prediction markets and news
 autorekt show SPY TLT -i 1d -r 1y --csv  # every bar of each series, for your own analysis
@@ -49,7 +53,7 @@ lists the providers.
 Rules are expressions the daemon evaluates; a hook runs when one holds.
 
 ```sh
-autorekt watch vix_inv --expr 'VIX - VIX3M > 1.5' --tf 15m --for 30m --hook 'notify.sh'
+autorekt watch vix_inv --expr 'VIX - VIX3M > 1.5' -i 15m --for 30m --hook 'notify.sh'
 autorekt watch 'pct(BTC, "1h") < -3' --test -r 30d   # backtest before relying on a rule
 autorekt watch --wait --timeout 1h                   # block until a rule fires
 autorekt watch                                       # list rules and their state
@@ -60,17 +64,19 @@ its environment. `autorekt watch --help` lists the expression functions.
 
 ## Share a report
 
-Write markdown with chart blocks, one chart per line in `show` syntax, then publish it as a page
+Write markdown with show blocks, one chart per line in `show` syntax, then publish it as a page
 with live charts:
 
 ````markdown
-```chart
+```show
 BTC -i 1h -r 7d --overlay BTC#open_interest
 VIX -i 1h -r 5d
 ```
 ````
 
 ```sh
+autorekt show journal.md                   # a journal: live holdings, orders, dates, what needs attention
+autorekt show journal.md --changes         # only what newly needs attention; watch journal.md alerts on it
 autorekt show report.md --share            # again later: updates the same link
 autorekt show report.md --share --ttl 0    # remove it
 autorekt show shares                       # every live link, views, expiry

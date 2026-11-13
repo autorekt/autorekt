@@ -5,6 +5,7 @@ mod analysis;
 mod brief;
 mod context;
 mod crypto;
+mod journal;
 mod monitor;
 mod report;
 mod rule;

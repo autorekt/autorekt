@@ -1,4 +1,4 @@
-//! Shared reports: markdown with ```chart blocks, kept in the store and rendered on each visit
+//! Shared reports: markdown with ```show blocks, kept in the store and rendered on each visit
 //! (raw HTML escaped) into the same page template as single charts. Each chart line becomes a
 //! chart share inside the report; a block with several lines becomes one component with tabs.
 
@@ -36,7 +36,7 @@ pub(super) struct ReportReq {
     tunnel: Option<bool>,
 }
 
-/// What a report share stores: its markdown and, per ```chart block, the (token, label) of
+/// What a report share stores: its markdown and, per ```show block, the (token, label) of
 /// each chart.
 #[derive(Serialize, Deserialize)]
 struct Doc {
@@ -48,13 +48,13 @@ fn options() -> Options {
     Options::ENABLE_TABLES | Options::ENABLE_STRIKETHROUGH
 }
 
-/// The contents of the ```chart blocks of a markdown document, in order.
+/// The contents of the ```show blocks of a markdown document, in order.
 pub fn chart_blocks(md: &str) -> Vec<String> {
     let mut out = Vec::new();
     let mut cur: Option<String> = None;
     for ev in Parser::new_ext(md, options()) {
         match ev {
-            Md::Start(Tag::CodeBlock(CodeBlockKind::Fenced(lang))) if lang.trim() == "chart" => cur = Some(String::new()),
+            Md::Start(Tag::CodeBlock(CodeBlockKind::Fenced(lang))) if lang.trim() == "show" => cur = Some(String::new()),
             Md::Text(t) if cur.is_some() => cur.as_mut().unwrap().push_str(&t),
             Md::End(TagEnd::CodeBlock) if cur.is_some() => out.push(cur.take().unwrap()),
             _ => {}
@@ -77,7 +77,7 @@ pub(super) fn block_html(charts: &[(String, String)]) -> String {
     format!("<div class=\"chart-block\" data-charts=\"{}\"></div>\n", escape(&Value::Array(data).to_string()))
 }
 
-/// Render markdown to HTML, replacing the n-th ```chart block with `blocks[n]` and escaping
+/// Render markdown to HTML, replacing the n-th ```show block with `blocks[n]` and escaping
 /// raw HTML. Returns (title from the first H1, html).
 fn render(md: &str, blocks: &[String]) -> (String, String) {
     let mut events: Vec<Md> = Vec::new();
@@ -87,7 +87,7 @@ fn render(md: &str, blocks: &[String]) -> (String, String) {
     let mut in_h1 = false;
     for ev in Parser::new_ext(md, options()) {
         match ev {
-            Md::Start(Tag::CodeBlock(CodeBlockKind::Fenced(ref lang))) if lang.trim() == "chart" => {
+            Md::Start(Tag::CodeBlock(CodeBlockKind::Fenced(ref lang))) if lang.trim() == "show" => {
                 in_chart = true;
                 events.push(Md::Html(CowStr::from(blocks.get(n).cloned().unwrap_or_default())));
                 n += 1;
@@ -175,7 +175,7 @@ mod tests {
 
     #[test]
     fn charts_and_html_are_handled() {
-        let md = "# Title <b>x</b>\n\ntext <script>alert(1)</script>\n\n```chart\nBTC -i 1h\nETH\n```\n\n```rust\nlet a = 1;\n```\n";
+        let md = "# Title <b>x</b>\n\ntext <script>alert(1)</script>\n\n```show\nBTC -i 1h\nETH\n```\n\n```rust\nlet a = 1;\n```\n";
         assert_eq!(chart_blocks(md), vec!["BTC -i 1h\nETH\n".to_string()]);
         let (title, html) = render(md, &["<div class=\"chart-block\"></div>".to_string()]);
         assert_eq!(title, "Title x");

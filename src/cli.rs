@@ -33,14 +33,20 @@ const SHOW_HELP: &str = "WHAT is one of:
   funding [COINS]  funding across venues, annualized          prelaunch    pre-launch and pre-IPO perps
   odds             trending prediction markets                 news [TOPIC] headlines (markets, macro, crypto)
   calendar [CCY]   macro releases                              alerts       this machine's rule and monitor events
+  news ID...       a stock's exchange filings (HKEXnews, SEC) and headlines, -r back (default 30d)
+  calendar ID...   a stock's earnings and dividend dates, -r ahead (default 60d)
   shares           links made with --share: what, views, expiry, URL
   ID               one series: text candles (or sparkline + table for single-value series),
                    then compressed earlier history, swings, levels, state, events and data checks
   ID ID ...        one row per id: last, changes, trend, flags (with --csv: every bar of each)
-  @FILE            the ids in a file, one per line (also inside a list: SPY @more.txt)
-  FILE.md          a markdown report; each line of a ```chart block is a chart in show syntax
-                   (several lines = one chart with tabs). Prints a text preview; --share publishes
-                   it as a page with live interactive charts.
+  @FILE            the ids in a file, one per line (also inside a list: SPY @more.txt); @JOURNAL.md:
+                   the ids a journal holds or has orders for
+  FILE.md          a markdown document; each line of a ```show block runs as `autorekt show ...`
+                   (on a page, a line naming one id is a live chart; several lines = tabs). A journal
+                   also has ```trades, ```positions, ```orders and ```dates pipe tables: holdings,
+                   cash, orders and dates shown live, with what needs attention first (--in CNY,
+                   --at DATE). --share publishes the document as a page (journal amounts only with
+                   --show-amounts).
 
 Examples:
   autorekt show
@@ -51,6 +57,11 @@ Examples:
   autorekt show SPY QQQ IWM --from 2026-11-06 --to 2026-11-12
   autorekt show megacaps --with '+chg(ytd)'
   autorekt show cn.industry --sort 'flow(5d)' --top 10 --bottom 10
+  autorekt show hk.southbound --with 'last,pe,pb,dy,mcap' --where 'dy > 6 and pb < 0.8' --sort dy
+  autorekt show 600519.SS#pe -i 1d -r 5y                   a fundamental's history (A-shares)
+  autorekt show news 0788.HK AAPL -r 14d                    filings and headlines about these stocks
+  autorekt show @holdings.txt --with lists                  US restriction lists (NS-CMIC, 1260H)
+  autorekt show calendar @holdings.txt                      their coming earnings and dividends
   autorekt show eastmoney:90.BK0475 -i 1d                   an A-share board (eastmoney market.code ids)
   autorekt show sectors --with 'chg(5d),chg(ytd)' --sort 'chg(5d)' --top 3 --bottom 3
   autorekt show @watchlist.txt --where 'from_high(52w) < -20' --sort '-chg(ytd)'
@@ -68,8 +79,8 @@ Examples:
   autorekt show report.md --share --ttl 0    (removes it)
   autorekt show shares
 
-A report chart block:
-  ```chart
+A show block:
+  ```show
   BTC -i 1h -r 7d --overlay BTC#open_interest
   RSP / SPY -i 1d -r 120d
   ```";
@@ -89,7 +100,7 @@ Examples:
   autorekt watch                                              list rules and monitors
   autorekt watch btc_dump --expr 'pct(BTC, \"1h\") < -3' --hook 'notify.sh'
   autorekt watch btc_80k --expr 'BTC > 80000' --cooldown 6h
-  autorekt watch vix_inv --expr 'VIX - VIX3M > 1.5' --tf 15m --for 30m
+  autorekt watch vix_inv --expr 'VIX - VIX3M > 1.5' -i 15m --for 30m
   autorekt watch hourly --every 1h --hook '...'
   autorekt watch us_open --cron '30 13 * * 1-5' --hook '...'
   autorekt watch macro --calendar 15m --countries USD,EUR --hook '...'
@@ -97,9 +108,10 @@ Examples:
   autorekt watch btc_dump --test                               evaluate now
   autorekt watch --wait --timeout 1h                           block until something fires
   autorekt watch basis --python                                create a Python monitor
+  autorekt watch journal.md                                    a journal's rules, order and date alerts
   autorekt watch btc_dump --rm
 
-Expressions: ids are closes at --tf; close/open/high/low/volume(id, tf), funding_rate(id),
+Expressions: ids are closes at -i; close/open/high/low/volume(id, tf), funding_rate(id),
 open_interest(id), prob(id, outcome), pct(id, \"1h\"), stale(id, \"2h\"), atr(id, tf, n),
 ta.sma ema rma wma rsi stdev highest lowest sum zscore change roc crossover crossunder cross
 rising falling, abs min max sqrt log nz hour dayofweek, + - * / > < >= <= == != and or not.
@@ -127,6 +139,7 @@ config.yaml keys:
   default_hook: 'command'        hook for monitor alerts without their own
   hook_chart_url: true           pass AUTOREKT_CHART_URL to hooks
   share_base_url / share_port / share_no_tunnel                 serving shared charts
+  sec_contact: 'Name you@example.com'                          sent to the SEC for US fundamentals (it requires one)
   share_tunnel_token_file: ~/.autorekt/tunnel.token             run a Cloudflare named tunnel (with share_base_url, share_port)";
 
 #[derive(Parser)]
@@ -237,7 +250,9 @@ pub struct ShowArgs {
     pub news: bool,
     /// A column: an expression where $ is the series ('ta.rsi($,14)'), or a table column
     /// (last, chg(5d), chg(ytd), chg(2024-09-13..2024-10-07), high(52w), low(52w), from_high(52w),
-    /// from_low(52w), dd(5y), vol(20d), vol_ratio(20); against a benchmark over -r at -i: beta(SPY),
+    /// from_low(52w), dd(5y), vol(20d), vol_ratio(20), flow(5d) (Eastmoney ids); company figures: pe, pb,
+    /// dy, dps, payout, mcap, eps, bvps, roe, debt_ratio, rev_yoy, np_yoy; lists (OFAC NS-CMIC by
+    /// ticker, DoD 1260H by name: parents and affiliates are not checked); against a benchmark over -r at -i: beta(SPY),
     /// corr(SPY), upcap(SPY), downcap(SPY)). Several ids or a board make a table with
     /// these columns; a leading + adds them to the board's own.
     #[arg(long)]
@@ -258,6 +273,12 @@ pub struct ShowArgs {
     /// With --share: link for this machine only (no tunnel).
     #[arg(long)]
     pub local: bool,
+    /// With --share of a journal: include quantities, costs and values (left out by default).
+    #[arg(long)]
+    pub show_amounts: bool,
+    /// A journal's values in one currency, e.g. CNY.
+    #[arg(long = "in")]
+    pub in_ccy: Option<String>,
 }
 
 #[derive(Args)]
@@ -297,8 +318,8 @@ pub struct WatchArgs {
     /// Calendar currencies, e.g. USD,EUR.
     #[arg(long)]
     pub countries: Option<String>,
-    /// Timeframe for ids in the expression (default 1m).
-    #[arg(long)]
+    /// Timeframe of bars for ids in the expression (default 1m).
+    #[arg(short = 'i', long = "interval")]
     pub tf: Option<String>,
     /// The condition must hold this long before firing.
     #[arg(long = "for")]
@@ -374,7 +395,7 @@ pub struct DaemonArgs {
     pub lines: usize,
 }
 
-/// Parse one line of a ```chart block ("BTC -i 1h -r 7d --overlay BTC#open_interest") with the
+/// Parse one line of a ```show block ("BTC -i 1h -r 7d --overlay BTC#open_interest") with the
 /// same options as `show`; quotes group words as in a shell.
 pub fn parse_chart_line(line: &str) -> Result<ShowArgs> {
     let mut words: Vec<String> = vec!["autorekt".into(), "show".into()];

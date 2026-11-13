@@ -397,7 +397,7 @@ kalshi:KXFEDDECISION-26DEC-H26  Will the Federal Reserve Hike rates by >25bps at
 <summary><code>autorekt watch 'pct(BTC, "1h") &lt; -1.5' --test</code></summary>
 
 ```
-$ autorekt watch 'pct(BTC, "1h") < -1.5' --test --tf 5m -r 14d --cooldown 6h
+$ autorekt watch 'pct(BTC, "1h") < -1.5' --test -i 5m -r 14d --cooldown 6h
 backtest adhoc  expr: pct(BTC, "1h") < -1.5  tf 5m  range 14d  for 0  cooldown 6h  ->  2 firing(s) over 4032 bars
 time                value  BTC +1h     +4h    +24h
 2026-10-29 20:40  -2.4493   +0.25%  -2.00%  -2.46%
@@ -411,7 +411,7 @@ time                value  BTC +1h     +4h    +24h
 
 agent 学用一个工具，靠的是模仿它以前被怎么用。所以接口尽量小：一件事一个动词，所有命令的选项含义一致，帮助和错误信息会告诉你下一步该做什么。
 
-- **`show`** 查看一切：简报、看板、K 线、某项指标、赔率、新闻、日历、你的提醒，或者一份 markdown 报告。`autorekt show liquidity`。`--view explain` 找到一次波动、同时在动的市场和相关新闻（`autorekt show BTC --view explain`）；`--view corr` 衡量资产之间如何联动。`--with` 选择表格的列（`autorekt show sectors --with 'chg(5d),chg(ytd),from_high(52w)'`），`--from`/`--to` 指定明确的区间，`--csv` 输出每个序列的每一根 K 线（`autorekt show SPY QQQ -i 1d -r 1y --csv`），`--md` 把表格输出为 Markdown。`--where`、`--sort`、`--top`、`--bottom` 筛选和排序表格；`@watchlist.txt` 从文件读取代码。`--adjust` 使用含股息的复权价格，`--vs` 指定 `beta()`、`corr()`、`upcap()`、`downcap()` 的基准（`autorekt show 0788.HK 2601.HK --vs 3033.HK --with 'beta(),upcap(),downcap()' -i 1M -r 5y --adjust`）。
+- **`show`** 查看一切：简报、看板、K 线、某项指标、赔率、新闻、日历、你的提醒，或者一份 markdown 报告。`autorekt show liquidity`。`--view explain` 找到一次波动、同时在动的市场和相关新闻（`autorekt show BTC --view explain`）；`--view corr` 衡量资产之间如何联动。`--with` 选择表格的列（`autorekt show sectors --with 'chg(5d),chg(ytd),from_high(52w)'`），`--from`/`--to` 指定明确的区间，`--csv` 输出每个序列的每一根 K 线（`autorekt show SPY QQQ -i 1d -r 1y --csv`），`--md` 把表格输出为 Markdown。`--where`、`--sort`、`--top`、`--bottom` 筛选和排序表格；`@watchlist.txt` 从文件读取代码。公司基本面也可以作为列：`autorekt show hk.southbound --with 'pe,pb,dy' --where 'dy > 6 and pb < 0.8'`（港股和 A 股来自东方财富，美股来自 SEC 申报文件）。`autorekt show news 0788.HK` 列出一只股票的交易所公告和新闻；`autorekt show calendar NVDA AAPL` 列出即将到来的财报和派息日期。`lists` 列标出在美国限制名单上的股票（OFAC NS-CMIC 按代码匹配，美国国防部 1260H 名单按公司名匹配；不检查母公司和关联方）。`--adjust` 使用含股息的复权价格，`--vs` 指定 `beta()`、`corr()`、`upcap()`、`downcap()` 的基准（`autorekt show 0788.HK 2601.HK --vs 3033.HK --with 'beta(),upcap(),downcap()' -i 1M -r 5y --adjust`）。
 - **`search`** 查找一切：所有来源的品种代码、预测市场、新闻标题。`autorekt search swap --kind instruments`
 - **`watch`** 被叫醒：用普通表达式写规则，先回测再信任，由后台守护进程运行。`autorekt watch --wait`
 
@@ -428,14 +428,14 @@ agent 学用一个工具，靠的是模仿它以前被怎么用。所以接口�
 
 ## 分享分析结果
 
-agent 可以把分析发布成网页：`autorekt show report.md --share` 会把带图表块的 markdown 变成一个带实时交互图表的页面，通过 Cloudflare 隧道从你的机器上提供访问。
+agent 可以把分析发布成网页：`autorekt show report.md --share` 会把带show 块的 markdown 变成一个带实时交互图表的页面，通过 Cloudflare 隧道从你的机器上提供访问。
 
 ````markdown
 ## Dollar liquidity is tightening
 
 Repo is trading above the rate the Fed pays on reserves.
 
-```chart
+```show
 nyfed:SOFR - fred:IORB -i 1d -r 90d
 (dtcc:SOFR10Y - fred:DGS10) * 100 -i 1d -r 180d
 ```
@@ -453,6 +453,8 @@ share_tunnel_token_file: ~/.autorekt/tunnel.token
 ```
 
 `autorekt daemon tunnel` 显示隧道状态；`autorekt daemon tunnel stop` 停止隧道。
+
+journal 是一份 markdown 文档，用竖线表格记录你的交易：```` ```trades ````（date action id qty price ccy fee）、```` ```positions ````、```` ```orders ````（ref side id qty limit placed）和 ```` ```dates ````。`autorekt show journal.md` 显示实时的持仓、现金、盈亏、挂单和日期，并先列出需要处理的事：价格已经到达的挂单、本周的日期。`--in CNY` 换算币种，`--at 2026-06-30` 按当天之前的交易回看，show 块里的 `@this` 代表 journal 里的所有代码。分享时，journal 默认不显示数量和金额，加 `--show-amounts` 才显示。`autorekt watch journal.md` 把其中未成交的挂单和日期（以及 ```` ```watch ```` 块里的规则）变成提醒，`--changes` 只显示新出现的需要处理的事；`account=sim` 表格里的挂单（可带止损和目标价，用 ```` ```instruments ```` 块设定合约乘数）会按每日 K 线自动成交和平仓，用于模拟交易。
 
 ## 许可证
 

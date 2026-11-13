@@ -431,7 +431,7 @@ releases `watch --wait` for agents without hooks.
 <summary><code>autorekt watch 'pct(BTC, "1h") &lt; -1.5' --test</code></summary>
 
 ```
-$ autorekt watch 'pct(BTC, "1h") < -1.5' --test --tf 5m -r 14d --cooldown 6h
+$ autorekt watch 'pct(BTC, "1h") < -1.5' --test -i 5m -r 14d --cooldown 6h
 backtest adhoc  expr: pct(BTC, "1h") < -1.5  tf 5m  range 14d  for 0  cooldown 6h  ->  2 firing(s) over 4032 bars
 time                value  BTC +1h     +4h    +24h
 2026-10-29 20:40  -2.4493   +0.25%  -2.00%  -2.46%
@@ -446,7 +446,7 @@ time                value  BTC +1h     +4h    +24h
 Agents learn a tool by imitating how it was used before, so the interface stays small: one verb
 per job, the same options everywhere, and help and error messages that say what to do next.
 
-- **`show`** Read anything: the briefing, boards, charts, a metric, odds, news, the calendar, your alerts, or a markdown report. `autorekt show liquidity`. `--view explain` finds a move, what moved with it and the news (`autorekt show BTC --view explain`); `--view corr` measures how assets move together. `--with` picks the columns of a table (`autorekt show sectors --with 'chg(5d),chg(ytd),from_high(52w)'`), `--from`/`--to` set an explicit span, `--csv` gives every bar of each series (`autorekt show SPY QQQ -i 1d -r 1y --csv`) and `--md` prints tables as Markdown. `--where`, `--sort`, `--top` and `--bottom` filter and order a table; `@watchlist.txt` reads ids from a file. `--adjust` uses prices that include dividends, and `--vs` sets the benchmark for `beta()`, `corr()`, `upcap()` and `downcap()` (`autorekt show 0788.HK 2601.HK --vs 3033.HK --with 'beta(),upcap(),downcap()' -i 1M -r 5y --adjust`).
+- **`show`** Read anything: the briefing, boards, charts, a metric, odds, news, the calendar, your alerts, or a markdown report. `autorekt show liquidity`. `--view explain` finds a move, what moved with it and the news (`autorekt show BTC --view explain`); `--view corr` measures how assets move together. `--with` picks the columns of a table (`autorekt show sectors --with 'chg(5d),chg(ytd),from_high(52w)'`), `--from`/`--to` set an explicit span, `--csv` gives every bar of each series (`autorekt show SPY QQQ -i 1d -r 1y --csv`) and `--md` prints tables as Markdown. `--where`, `--sort`, `--top` and `--bottom` filter and order a table; `@watchlist.txt` reads ids from a file. Company figures are columns too: `autorekt show hk.southbound --with 'pe,pb,dy' --where 'dy > 6 and pb < 0.8'` (Hong Kong and A-shares from Eastmoney, US from SEC filings). `autorekt show news 0788.HK` lists a stock's exchange filings and headlines; `autorekt show calendar NVDA AAPL` its coming earnings and dividends. The `lists` column flags stocks on US restriction lists (OFAC NS-CMIC by ticker, the Department of Defense 1260H list by name; parents and affiliates are not checked). `--adjust` uses prices that include dividends, and `--vs` sets the benchmark for `beta()`, `corr()`, `upcap()` and `downcap()` (`autorekt show 0788.HK 2601.HK --vs 3033.HK --with 'beta(),upcap(),downcap()' -i 1M -r 5y --adjust`).
 - **`search`** Find anything: instrument ids across every source, prediction markets, headlines. `autorekt search swap --kind instruments`
 - **`watch`** Get woken: rules in plain expressions, backtested before they are trusted, run by a background daemon. `autorekt watch --wait`
 
@@ -465,7 +465,7 @@ autorekt says so instead of quietly showing something else.
 ## Share what it found
 
 An agent can publish its analysis as a web page: `autorekt show report.md --share` turns markdown
-with chart blocks into a page with live, interactive charts, served from your machine through a
+with show blocks into a page with live, interactive charts, served from your machine through a
 Cloudflare tunnel.
 
 ````markdown
@@ -473,7 +473,7 @@ Cloudflare tunnel.
 
 Repo is trading above the rate the Fed pays on reserves.
 
-```chart
+```show
 nyfed:SOFR - fred:IORB -i 1d -r 90d
 (dtcc:SOFR10Y - fred:DGS10) * 100 -i 1d -r 180d
 ```
@@ -495,6 +495,18 @@ share_tunnel_token_file: ~/.autorekt/tunnel.token
 ```
 
 `autorekt daemon tunnel` shows the tunnel; `autorekt daemon tunnel stop` ends it.
+
+A journal is a markdown document that also keeps your records in pipe tables: ```` ```trades ````
+(date action id qty price ccy fee), ```` ```positions ````, ```` ```orders ```` (ref side id qty limit
+placed) and ```` ```dates ````. `autorekt show journal.md` shows it with live holdings, cash,
+gains, orders and dates, and lists first what needs attention: an order the price has reached,
+or a date this week. `--in CNY` converts values, `--at 2026-06-30` replays the trades up to a date,
+and `@this` in a show block stands for the journal's ids. Shared, a journal leaves out quantities
+and amounts unless you add `--show-amounts`. `autorekt watch journal.md` turns its open orders and
+dates (and rules in a ```` ```watch ```` block) into alerts, `--changes` shows only what newly needs
+attention, and orders in an `account=sim` table (with optional stop and target, and an
+```` ```instruments ```` block for contract multipliers) fill and exit by themselves from daily bars,
+for paper trading.
 
 ## License
 
