@@ -1,6 +1,7 @@
 //! Table columns for `show --with`: functions of a series' daily closes (the latest value, the
 //! change over a window or between two dates, highs and lows, drawdown, volatility, volume
-//! against its average), or the latest value of an expression where `$` is the series.
+//! against its average), statistics against a benchmark (beta, correlation, upside and downside
+//! capture), or the latest value of an expression where `$` is the series.
 
 use crate::model::{parse_time, Bar};
 use anyhow::{bail, Result};
@@ -31,6 +32,11 @@ pub enum Func {
     Dd(Window),
     Vol(Window),
     VolRatio(usize),
+    /// Against a benchmark id ("" = the command's --vs), from returns per -i period.
+    Beta(String),
+    Corr(String),
+    UpCap(String),
+    DownCap(String),
     /// An expression; its latest value is shown.
     Expr(String),
 }
@@ -65,6 +71,14 @@ fn window(s: &str) -> Result<Window> {
     Ok(Window::Days(days))
 }
 
+/// A length such as 30d, 52w, 6M or 5y, in ms.
+pub fn length_ms(s: &str) -> Result<i64> {
+    match window(s)? {
+        Window::Days(n) => Ok(n * DAY),
+        _ => bail!("'{s}' is not a length (use 30d, 52w, 6M or 5y)"),
+    }
+}
+
 pub fn parse(spec: &str) -> Result<Column> {
     let s = spec.trim();
     let label = s.to_string();
@@ -80,9 +94,13 @@ pub fn parse(spec: &str) -> Result<Column> {
         Some(("from_low", w)) => Func::FromLow(window(w)?),
         Some(("dd", w)) => Func::Dd(window(w)?),
         Some(("vol", w)) => Func::Vol(window(w)?),
+        Some(("beta", b)) => Func::Beta(b.trim().to_string()),
+        Some(("corr", b)) => Func::Corr(b.trim().to_string()),
+        Some(("upcap", b)) => Func::UpCap(b.trim().to_string()),
+        Some(("downcap", b)) => Func::DownCap(b.trim().to_string()),
         Some(("vol_ratio", n)) => Func::VolRatio(n.trim().parse().map_err(|_| anyhow::anyhow!("vol_ratio(N): N is a number of days, e.g. vol_ratio(20)"))?),
         _ if s.contains('$') => Func::Expr(s.to_string()),
-        _ => bail!("unknown column '{s}': use last, chg(5d), chg(ytd), chg(2024-09-13..2024-10-07), high(52w), low(52w), from_high(52w), from_low(52w), dd(5y), vol(20d), vol_ratio(20), or an expression with $ such as 'ta.rsi($,14)'"),
+        _ => bail!("unknown column '{s}': use last, chg(5d), chg(ytd), chg(2024-09-13..2024-10-07), high(52w), low(52w), from_high(52w), from_low(52w), dd(5y), vol(20d), vol_ratio(20), beta(SPY), corr(SPY), upcap(SPY), downcap(SPY), or an expression with $ such as 'ta.rsi($,14)'"),
     };
     Ok(Column { label, func })
 }
@@ -105,7 +123,63 @@ fn span(w: &Window, last: i64, command: Option<(i64, i64)>) -> Option<(i64, i64)
     }
 }
 
+/// The last close in each period of `period_ms` (1d, 1w or 1M), keyed by the period.
+fn per_period(bars: &[Bar], period_ms: i64) -> std::collections::BTreeMap<i64, f64> {
+    use chrono::Datelike;
+    let key = |t: i64| {
+        let d = chrono::DateTime::from_timestamp_millis(t).unwrap_or_default();
+        match period_ms {
+            p if p >= 28 * DAY => (d.year() * 100 + d.month() as i32) as i64,
+            p if p >= 7 * DAY => (d.iso_week().year() * 100 + d.iso_week().week() as i32) as i64,
+            _ => t / DAY,
+        }
+    };
+    bars.iter().map(|b| (key(b.timestamp), b.close)).collect()
+}
+
+/// (benchmark, series) returns over the periods both have.
+fn paired_returns(bars: &[Bar], bench: &[Bar], period_ms: i64) -> Vec<(f64, f64)> {
+    let (a, b) = (per_period(bars, period_ms), per_period(bench, period_ms));
+    let common: Vec<(f64, f64)> = a.iter().filter_map(|(k, v)| Some((*b.get(k)?, *v))).collect();
+    common.windows(2).filter(|w| w[0].0 > 0.0 && w[0].1 > 0.0).map(|w| (w[1].0 / w[0].0 - 1.0, w[1].1 / w[0].1 - 1.0)).collect()
+}
+
 impl Column {
+    /// The benchmark of a statistics column ("" for the command's --vs), if it is one.
+    pub fn bench(&self) -> Option<&str> {
+        match &self.func {
+            Func::Beta(b) | Func::Corr(b) | Func::UpCap(b) | Func::DownCap(b) => Some(b.as_str()),
+            _ => None,
+        }
+    }
+
+    /// A statistics column from the series' and the benchmark's daily bars, per period.
+    pub fn eval_vs(&self, bars: &[Bar], bench: &[Bar], period_ms: i64) -> Option<f64> {
+        let p = paired_returns(bars, bench, period_ms);
+        if p.len() < 3 {
+            return None;
+        }
+        let (xs, ys): (Vec<f64>, Vec<f64>) = p.iter().cloned().unzip();
+        let mean = |v: &[f64]| v.iter().sum::<f64>() / v.len() as f64;
+        let capture = |up: bool| {
+            let side: Vec<&(f64, f64)> = p.iter().filter(|(x, _)| if up { *x > 0.0 } else { *x < 0.0 }).collect();
+            let mx = side.iter().map(|(x, _)| x).sum::<f64>();
+            (!side.is_empty() && mx != 0.0).then(|| side.iter().map(|(_, y)| y).sum::<f64>() / mx * 100.0)
+        };
+        match &self.func {
+            Func::Beta(_) => {
+                let (mx, my) = (mean(&xs), mean(&ys));
+                let cov: f64 = p.iter().map(|(x, y)| (x - mx) * (y - my)).sum();
+                let var: f64 = xs.iter().map(|x| (x - mx).powi(2)).sum();
+                (var > 0.0).then(|| cov / var)
+            }
+            Func::Corr(_) => Some(crate::render::correlation(&xs, &ys)),
+            Func::UpCap(_) => capture(true),
+            Func::DownCap(_) => capture(false),
+            _ => None,
+        }
+    }
+
     /// How far back the daily bars must reach (ms) for this column, before `end`.
     pub fn reach(&self, end: i64) -> i64 {
         let w = match &self.func {
@@ -166,7 +240,7 @@ impl Column {
                 let avg = bars[k - 1 - n..k - 1].iter().map(|x| x.volume).sum::<f64>() / *n as f64;
                 (avg > 0.0).then(|| last.volume / avg)
             }
-            Func::Expr(_) => None,
+            Func::Expr(_) | Func::Beta(_) | Func::Corr(_) | Func::UpCap(_) | Func::DownCap(_) => None,
         }
     }
 
@@ -174,7 +248,8 @@ impl Column {
         let Some(v) = v.filter(|v| v.is_finite()) else { return "-".into() };
         match &self.func {
             Func::Chg(_) | Func::FromHigh(_) | Func::FromLow(_) | Func::Dd(_) => format!("{v:+.2}%"),
-            Func::Vol(_) => format!("{v:.1}%"),
+            Func::Vol(_) | Func::UpCap(_) | Func::DownCap(_) => format!("{v:.0}%"),
+            Func::Beta(_) | Func::Corr(_) => format!("{v:+.2}"),
             Func::VolRatio(_) => format!("{v:.2}x"),
             _ => crate::render::fmt_auto(v),
         }
@@ -203,5 +278,16 @@ mod tests {
         assert!(matches!(parse("ta.rsi($,14)").unwrap().func, Func::Expr(_)));
         assert!(parse("chg(5x)").is_err());
         assert!(parse("pe").is_err());
+    }
+
+    #[test]
+    fn statistics_against_a_benchmark() {
+        let bench = bars(&[100.0, 110.0, 99.0, 108.9, 98.01]);
+        let half = bars(&[100.0, 105.0, 99.75, 104.7375, 99.500625]);
+        let v = |s: &str| parse(s).unwrap().eval_vs(&half, &bench, DAY).unwrap();
+        assert!((v("beta(B)") - 0.5).abs() < 0.02);
+        assert!(v("corr(B)") > 0.99);
+        assert!((v("upcap(B)") - 50.0).abs() < 1e-6);
+        assert!((v("downcap(B)") - 50.0).abs() < 1e-6);
     }
 }

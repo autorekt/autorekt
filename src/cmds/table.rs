@@ -135,9 +135,18 @@ pub fn wanted_table(a: &ShowArgs, several: bool) -> bool {
     a.with.iter().flat_map(|w| split_top(w)).any(|s| !matches!(columns::parse(s.trim_start_matches('+')).map(|c| c.func), Ok(Func::Expr(_))))
 }
 
+/// The id whose closes include dividends and splits (Yahoo ids only), for --adjust.
+pub fn adjusted(id: &str) -> Result<String> {
+    let parsed = (!expr::is_expression(id)).then(|| ids::parse(id)).transpose()?;
+    match parsed {
+        Some(p) if p.provider == "yahoo" && p.metric.is_none() => Ok(format!("{p}#adj_close")),
+        _ => bail!("--adjust: dividend-adjusted prices come from Yahoo ids only, not '{id}'"),
+    }
+}
+
 /// Daily bars of an id or expression from `start` to `end`.
 async fn daily(id: &str, start: i64, end: Option<i64>) -> Result<Vec<Bar>> {
-    let r = Range { start: Some(start), end, limit: 5000 };
+    let r = Range { start: Some(start), end, limit: 10000 };
     if expr::is_expression(id) {
         let (g, v) = expr::evaluate(id, Timeframe::D1, r).await?;
         return Ok(g.into_iter().zip(v).filter(|(_, x)| x.is_finite()).map(|(t, x)| Bar::point(t, x)).collect());
@@ -152,23 +161,44 @@ async fn expr_value(spec: &str, id: &str, tf: Timeframe, end: Option<i64>) -> Re
     Ok(v.into_iter().rev().find(|x| x.is_finite()))
 }
 
+/// What every row of a table shares: the end, the span, the period of statistics, how far back
+/// statistics look, whether prices are adjusted, and the benchmarks' bars.
+struct Ctx {
+    tf: Timeframe,
+    end: Option<i64>,
+    span: Option<(i64, i64)>,
+    stats_from: i64,
+    adjust: bool,
+    benches: std::collections::HashMap<String, Vec<Bar>>,
+}
+
 /// One row: the values of every column for `item` ("LABEL|id" or an id), or why it failed.
-async fn row(item: &str, cols: &[Column], tf: Timeframe, end: Option<i64>, span: Option<(i64, i64)>) -> (String, Result<Vec<Option<f64>>>) {
+async fn row(item: &str, cols: &[Column], ctx: &Ctx) -> (String, Result<Vec<Option<f64>>>) {
     let (label, id) = match item.split_once('|') {
         Some((l, i)) => (l.trim().to_string(), i.trim().to_string()),
         None => (item.to_string(), item.to_string()),
     };
-    let e = end.unwrap_or_else(now_ms);
-    let start = cols.iter().map(|c| c.reach(e)).chain(span.map(|(a, _)| a - 10 * 86_400_000)).min().unwrap_or(e);
+    let e = ctx.end.unwrap_or_else(now_ms);
+    let stats = cols.iter().any(|c| c.bench().is_some());
+    let start = cols.iter().map(|c| c.reach(e)).chain(ctx.span.map(|(a, _)| a - 10 * 86_400_000)).chain(stats.then_some(ctx.stats_from)).min().unwrap_or(e);
     let needs_bars = cols.iter().any(|c| !matches!(c.func, Func::Expr(_)));
+    let source = if ctx.adjust && needs_bars {
+        match adjusted(&id) {
+            Ok(a) => a,
+            Err(err) => return (label, Err(err)),
+        }
+    } else {
+        id.clone()
+    };
     let bars = if needs_bars {
-        match daily(&id, start, end).await {
+        match daily(&source, start, ctx.end).await {
             Ok(b) => b,
             Err(err) => return (label, Err(err)),
         }
     } else {
         vec![]
     };
+    let (tf, end, span) = (ctx.tf, ctx.end, ctx.span);
     let mut vals = Vec::new();
     for c in cols {
         vals.push(match &c.func {
@@ -176,6 +206,10 @@ async fn row(item: &str, cols: &[Column], tf: Timeframe, end: Option<i64>, span:
                 Ok(v) => v,
                 Err(err) => return (label, Err(err.context(c.label.clone()))),
             },
+            _ if c.bench().is_some() => {
+                let own: Vec<Bar> = bars.iter().filter(|b| b.timestamp >= ctx.stats_from).cloned().collect();
+                ctx.benches.get(c.bench().unwrap()).and_then(|b| c.eval_vs(&own, b, tf.ms()))
+            }
             _ => c.eval(&bars, span),
         });
     }
@@ -203,7 +237,22 @@ pub async fn table(items: &[String], name: &str, a: &ShowArgs, g: &Global, o: &O
         _ => None,
     };
     let tf = Timeframe::parse(a.interval.as_deref().unwrap_or("1d"))?;
-    let mut rows = futures::future::join_all(items.iter().map(|i| row(i, &cols, tf, end, span))).await;
+    // Statistics columns name their benchmark, or use --vs.
+    for c in cols.iter_mut() {
+        if c.bench() == Some("") {
+            let b = a.vs.clone().ok_or_else(|| anyhow::anyhow!("{} needs a benchmark: write it inside, e.g. beta(SPY), or give --vs SPY", c.label))?;
+            c.func = columns::parse(&format!("{}({b})", c.label.trim_end_matches("()")))?.func;
+        }
+    }
+    let stats_from = end.unwrap_or_else(now_ms) - columns::length_ms(a.range.as_deref().unwrap_or("1y"))?;
+    let mut benches = std::collections::HashMap::new();
+    for b in cols.iter().filter_map(|c| c.bench()).map(|b| b.to_string()).collect::<std::collections::BTreeSet<_>>() {
+        let source = if a.adjust { adjusted(&b)? } else { b.clone() };
+        let bars = daily(&source, stats_from - 40 * 86_400_000, end).await.with_context(|| format!("benchmark {b}"))?;
+        benches.insert(b, bars.into_iter().filter(|x| x.timestamp >= stats_from).collect::<Vec<_>>());
+    }
+    let ctx = Ctx { tf, end, span, stats_from, adjust: a.adjust, benches };
+    let mut rows = futures::future::join_all(items.iter().map(|i| row(i, &cols, &ctx))).await;
     let col_of = |name: &str| cols.iter().position(|c| c.label == name);
     if !filter.is_empty() {
         rows.retain(|(label, r)| match r {

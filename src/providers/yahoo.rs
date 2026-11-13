@@ -83,6 +83,9 @@ impl Provider for Yahoo {
     fn describe(&self) -> &'static str {
         "Yahoo Finance: indices, stocks, ETFs, futures, FX, yields (unofficial; may be delayed)"
     }
+    fn metrics(&self) -> &'static [&'static str] {
+        &["adj_close"]
+    }
     fn notes(&self, symbol: &str) -> Vec<String> {
         if symbol.ends_with("=F") || symbol.starts_with('^') {
             vec!["may be delayed".into()]
@@ -163,6 +166,28 @@ impl Provider for Yahoo {
             None => bars,
         };
         Ok(finish(bars, range))
+    }
+
+    /// `adj_close`: daily (or longer) closes adjusted for dividends and splits, i.e. total return.
+    async fn fetch_metric(&self, symbol: &str, metric: &str, tf: Timeframe, range: Range) -> Result<Vec<MetricPoint>> {
+        if metric != "adj_close" {
+            bail!("yahoo: metric '{metric}' not supported for {symbol} (supported: adj_close)");
+        }
+        if tf.secs < 86400 {
+            bail!("yahoo: adj_close is daily or longer (use -i 1d, 1w or 1M)");
+        }
+        let (iv, resample_to) = interval(tf);
+        if resample_to.is_some() {
+            bail!("yahoo: adj_close comes in 1d, 1w and 1M bars only");
+        }
+        let end = range.end_ms();
+        let start = range.start.unwrap_or(end - tf.ms() * range.limit as i64 * 2);
+        let r = chart(symbol, iv, start, end).await?;
+        let tz = exchange_tz(&r["meta"], symbol)?;
+        let ts = r["timestamp"].as_array().cloned().unwrap_or_default();
+        let adj = &r["indicators"]["adjclose"][0]["adjclose"];
+        let pts = ts.iter().enumerate().filter_map(|(i, t)| Some(MetricPoint { timestamp: trading_date(t.as_i64()? * 1000, tz), value: num(&adj[i])? })).collect();
+        Ok(finish_metric(pts, range))
     }
 
     async fn fetch_ticker(&self, symbol: &str) -> Result<Ticker> {
