@@ -94,13 +94,20 @@ async fn cik(ticker: &str, ua: &str) -> Result<u64> {
         .with_context(|| format!("sec: no company with ticker {ticker}"))
 }
 
+/// Days between a fact's start and end (none for a point-in-time figure such as equity).
+fn span_days(r: &Value) -> Option<i64> {
+    let d = |k: &str| chrono::NaiveDate::parse_from_str(r[k].as_str()?, "%Y-%m-%d").ok();
+    Some((d("end")? - d("start")?).num_days())
+}
+
 /// The latest two fiscal-year values of a fact (newest first), from 10-K filings.
 fn annual(facts: &Value, names: &[&str], unit: &str) -> Vec<f64> {
     for n in names {
         let Some(rows) = facts["facts"]["us-gaap"][n]["units"][unit].as_array() else { continue };
         let mut fy: Vec<(String, f64)> = rows
             .iter()
-            .filter(|r| r["form"] == "10-K" && r["fp"] == "FY" && r["frame"].as_str().is_some_and(|f| f.len() == 6))
+            // Annual figures: from 10-K filings, and for flows a span of about a year.
+            .filter(|r| r["form"] == "10-K" && r["fp"] == "FY" && span_days(r).map_or(true, |d| d > 300))
             .filter_map(|r| Some((r["end"].as_str()?.to_string(), num(&r["val"])?)))
             .collect();
         fy.sort_by(|a, b| b.0.cmp(&a.0));
