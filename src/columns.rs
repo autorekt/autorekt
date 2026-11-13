@@ -32,6 +32,8 @@ pub enum Func {
     Dd(Window),
     Vol(Window),
     VolRatio(usize),
+    /// Net buying by large orders summed over the window (Eastmoney ids, CNY bn).
+    Flow(Window),
     /// Against a benchmark id ("" = the command's --vs), from returns per -i period.
     Beta(String),
     Corr(String),
@@ -98,9 +100,10 @@ pub fn parse(spec: &str) -> Result<Column> {
         Some(("corr", b)) => Func::Corr(b.trim().to_string()),
         Some(("upcap", b)) => Func::UpCap(b.trim().to_string()),
         Some(("downcap", b)) => Func::DownCap(b.trim().to_string()),
+        Some(("flow", w)) => Func::Flow(window(w)?),
         Some(("vol_ratio", n)) => Func::VolRatio(n.trim().parse().map_err(|_| anyhow::anyhow!("vol_ratio(N): N is a number of days, e.g. vol_ratio(20)"))?),
         _ if s.contains('$') => Func::Expr(s.to_string()),
-        _ => bail!("unknown column '{s}': use last, chg(5d), chg(ytd), chg(2024-09-13..2024-10-07), high(52w), low(52w), from_high(52w), from_low(52w), dd(5y), vol(20d), vol_ratio(20), beta(SPY), corr(SPY), upcap(SPY), downcap(SPY), or an expression with $ such as 'ta.rsi($,14)'"),
+        _ => bail!("unknown column '{s}': use last, chg(5d), chg(ytd), chg(2024-09-13..2024-10-07), high(52w), low(52w), from_high(52w), from_low(52w), dd(5y), vol(20d), vol_ratio(20), flow(5d), beta(SPY), corr(SPY), upcap(SPY), downcap(SPY), or an expression with $ such as 'ta.rsi($,14)'"),
     };
     Ok(Column { label, func })
 }
@@ -183,7 +186,7 @@ impl Column {
     /// How far back the daily bars must reach (ms) for this column, before `end`.
     pub fn reach(&self, end: i64) -> i64 {
         let w = match &self.func {
-            Func::Chg(w) | Func::High(w) | Func::Low(w) | Func::FromHigh(w) | Func::FromLow(w) | Func::Dd(w) | Func::Vol(w) => w,
+            Func::Chg(w) | Func::High(w) | Func::Low(w) | Func::FromHigh(w) | Func::FromLow(w) | Func::Dd(w) | Func::Vol(w) | Func::Flow(w) => w,
             Func::VolRatio(n) => return end - (*n as i64 * 2 + 10) * DAY,
             _ => return end - 10 * DAY,
         };
@@ -240,8 +243,17 @@ impl Column {
                 let avg = bars[k - 1 - n..k - 1].iter().map(|x| x.volume).sum::<f64>() / *n as f64;
                 (avg > 0.0).then(|| last.volume / avg)
             }
-            Func::Expr(_) | Func::Beta(_) | Func::Corr(_) | Func::UpCap(_) | Func::DownCap(_) => None,
+            Func::Flow(_) | Func::Expr(_) | Func::Beta(_) | Func::Corr(_) | Func::UpCap(_) | Func::DownCap(_) => None,
         }
+    }
+
+    /// A flow column: the sum of the daily flows (oldest first) in its window, ending at the
+    /// last price bar.
+    pub fn eval_flow(&self, flows: &[Bar], last: i64, command: Option<(i64, i64)>) -> Option<f64> {
+        let Func::Flow(w) = &self.func else { return None };
+        let (a, b) = span(w, last, command)?;
+        let v: Vec<f64> = flows.iter().filter(|x| x.timestamp > a && x.timestamp <= b).map(|x| x.close).collect();
+        (!v.is_empty()).then(|| v.iter().sum())
     }
 
     pub fn fmt(&self, v: Option<f64>) -> String {
@@ -250,6 +262,7 @@ impl Column {
             Func::Chg(_) | Func::FromHigh(_) | Func::FromLow(_) | Func::Dd(_) => format!("{v:+.2}%"),
             Func::Vol(_) | Func::UpCap(_) | Func::DownCap(_) => format!("{v:.0}%"),
             Func::Beta(_) | Func::Corr(_) => format!("{v:+.2}"),
+            Func::Flow(_) => format!("{v:+.2}bn"),
             Func::VolRatio(_) => format!("{v:.2}x"),
             _ => crate::render::fmt_auto(v),
         }

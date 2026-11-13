@@ -36,7 +36,7 @@ pub fn daily_points(item: &str) -> usize {
 }
 
 fn daily_only(id: &InstrumentId) -> bool {
-    ids::POINT_PROVIDERS.contains(&id.provider.as_str()) && id.provider != "local"
+    ids::points(id) && id.provider != "local"
 }
 
 fn close_at_or_before(bars: &[Bar], t: i64) -> Option<f64> {

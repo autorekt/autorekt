@@ -40,9 +40,27 @@ fn explain(status: u16, url: &str, body: &str) -> anyhow::Error {
     anyhow!("HTTP {status} from {host}{hint}\n  {snippet}")
 }
 
+/// Hosts that throttle hard get at most one request per this many ms from this process.
+fn pace_ms(url: &str) -> Option<u64> {
+    let host = url.split('/').nth(2).unwrap_or("");
+    host.ends_with("eastmoney.com").then_some(1000)
+}
+
+/// Wait for this host's turn.
+async fn pace(url: &str) {
+    static LAST: tokio::sync::Mutex<Option<tokio::time::Instant>> = tokio::sync::Mutex::const_new(None);
+    let Some(ms) = pace_ms(url) else { return };
+    let mut last = LAST.lock().await;
+    if let Some(t) = *last {
+        tokio::time::sleep_until(t + Duration::from_millis(ms)).await;
+    }
+    *last = Some(tokio::time::Instant::now());
+}
+
 async fn send(req: reqwest::RequestBuilder, url: &str) -> Result<String> {
     let mut last_err = None;
     for attempt in 0..3 {
+        pace(url).await;
         let r = req.try_clone().ok_or_else(|| anyhow!("request not cloneable"))?;
         match r.send().await {
             Ok(resp) => {

@@ -425,7 +425,7 @@ pub struct Firing {
 /// metric (BTC for BTC#funding_rate), the primary itself if it is tradable, else SPX.
 pub fn forward_ref(primary: &crate::ids::InstrumentId) -> crate::ids::InstrumentId {
     let non_tradable = matches!(primary.provider.as_str(), "polymarket" | "kalshi")
-        || crate::ids::POINT_PROVIDERS.contains(&primary.provider.as_str())
+        || crate::ids::points(&primary)
         || primary.symbol.ends_with("-DVOL")
         || crate::ids::level_unit(&primary.base()).is_some();
     if primary.metric.is_some() && !non_tradable {

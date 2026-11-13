@@ -50,7 +50,7 @@ fn warm_set() -> BTreeSet<InstrumentId> {
 
 /// Statistics and odds are read as daily series; markets also hourly.
 fn daily(id: &InstrumentId) -> bool {
-    ids::POINT_PROVIDERS.contains(&id.provider.as_str()) || matches!(id.provider.as_str(), "polymarket" | "kalshi")
+    ids::points(id) || matches!(id.provider.as_str(), "polymarket" | "kalshi")
 }
 
 /// The store keys a board row reads for `id`, with the timeframe that sets their freshness.

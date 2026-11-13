@@ -27,8 +27,9 @@ pub fn command_span(a: &ShowArgs) -> Result<Option<(i64, i64)>> {
 /// Columns of a table with no --with.
 const DEFAULT: &[&str] = &["last", "chg(1d)", "chg(5d)", "chg(1M)", "chg(ytd)", "from_high(52w)"];
 
-/// The columns asked for; with --from and no --with, the latest value and the change over the span.
-fn wanted(a: &ShowArgs) -> Result<(Vec<Column>, bool)> {
+/// The columns asked for; with --from and no --with, the latest value and the change over the
+/// span; with no --with, `default` (or DEFAULT).
+fn wanted(a: &ShowArgs, default: &[&str]) -> Result<(Vec<Column>, bool)> {
     let specs: Vec<String> = a.with.iter().flat_map(|w| split_top(w)).collect();
     if specs.is_empty() && a.from.is_some() {
         let mut chg = columns::parse("chg()")?;
@@ -36,7 +37,8 @@ fn wanted(a: &ShowArgs) -> Result<(Vec<Column>, bool)> {
         return Ok((vec![columns::parse("last")?, chg], false));
     }
     if specs.is_empty() {
-        return Ok((DEFAULT.iter().map(|s| columns::parse(s)).collect::<Result<_>>()?, false));
+        let d = if default.is_empty() { DEFAULT } else { default };
+        return Ok((d.iter().map(|s| columns::parse(s)).collect::<Result<_>>()?, false));
     }
     let added = specs.iter().all(|s| s.starts_with('+'));
     Ok((specs.iter().map(|s| columns::parse(s.trim_start_matches('+'))).collect::<Result<_>>()?, added))
@@ -170,6 +172,8 @@ struct Ctx {
     stats_from: i64,
     adjust: bool,
     benches: std::collections::HashMap<String, Vec<Bar>>,
+    /// Values a set's list already gives, per item and column label.
+    known: std::collections::HashMap<String, std::collections::HashMap<String, f64>>,
 }
 
 /// One row: the values of every column for `item` ("LABEL|id" or an id), or why it failed.
@@ -178,6 +182,9 @@ async fn row(item: &str, cols: &[Column], ctx: &Ctx) -> (String, Result<Vec<Opti
         Some((l, i)) => (l.trim().to_string(), i.trim().to_string()),
         None => (item.to_string(), item.to_string()),
     };
+    if let Some(k) = ctx.known.get(item).filter(|k| ctx.end.is_none() && ctx.span.is_none() && cols.iter().all(|c| k.contains_key(&c.label))) {
+        return (label, Ok(cols.iter().map(|c| k.get(&c.label).copied()).collect()));
+    }
     let e = ctx.end.unwrap_or_else(now_ms);
     let stats = cols.iter().any(|c| c.bench().is_some());
     let start = cols.iter().map(|c| c.reach(e)).chain(ctx.span.map(|(a, _)| a - 10 * 86_400_000)).chain(stats.then_some(ctx.stats_from)).min().unwrap_or(e);
@@ -198,6 +205,17 @@ async fn row(item: &str, cols: &[Column], ctx: &Ctx) -> (String, Result<Vec<Opti
     } else {
         vec![]
     };
+    let flows = if cols.iter().any(|c| matches!(c.func, Func::Flow(_))) {
+        match providers::ohlcv(&match ids::parse(&format!("{id}#main_flow")) {
+            Ok(i) => i,
+            Err(err) => return (label, Err(err)),
+        }, Timeframe::D1, Range::last(150)).await {
+            Ok(f) => f,
+            Err(err) => return (label, Err(err.context("flow() needs an Eastmoney id, e.g. eastmoney:90.BK0475"))),
+        }
+    } else {
+        vec![]
+    };
     let (tf, end, span) = (ctx.tf, ctx.end, ctx.span);
     let mut vals = Vec::new();
     for c in cols {
@@ -210,6 +228,7 @@ async fn row(item: &str, cols: &[Column], ctx: &Ctx) -> (String, Result<Vec<Opti
                 let own: Vec<Bar> = bars.iter().filter(|b| b.timestamp >= ctx.stats_from).cloned().collect();
                 ctx.benches.get(c.bench().unwrap()).and_then(|b| c.eval_vs(&own, b, tf.ms()))
             }
+            Func::Flow(_) => bars.last().and_then(|b| c.eval_flow(&flows, b.timestamp, span)),
             _ => c.eval(&bars, span),
         });
     }
@@ -217,7 +236,17 @@ async fn row(item: &str, cols: &[Column], ctx: &Ctx) -> (String, Result<Vec<Opti
 }
 
 pub async fn table(items: &[String], name: &str, a: &ShowArgs, g: &Global, o: &Opts) -> Result<()> {
-    let (mut cols, added) = wanted(a)?;
+    let mut known = std::collections::HashMap::new();
+    let mut items = items.to_vec();
+    let mut default = vec![];
+    if items.len() == 1 && crate::sets::is_set(&items[0]) {
+        let members = crate::sets::members(&items[0]).await?;
+        items = members.iter().map(|m| m.item.clone()).collect();
+        known = members.into_iter().map(|m| (m.item, m.values)).collect();
+        default = crate::sets::default_columns();
+    }
+    let items = &items[..];
+    let (mut cols, added) = wanted(a, &default)?;
     if added && (a.filter.is_some() || a.sort.is_some() || a.top.is_some() || a.bottom.is_some()) {
         bail!("--where, --sort, --top and --bottom work on a table of your columns: drop the + from --with");
     }
@@ -251,7 +280,7 @@ pub async fn table(items: &[String], name: &str, a: &ShowArgs, g: &Global, o: &O
         let bars = daily(&source, stats_from - 40 * 86_400_000, end).await.with_context(|| format!("benchmark {b}"))?;
         benches.insert(b, bars.into_iter().filter(|x| x.timestamp >= stats_from).collect::<Vec<_>>());
     }
-    let ctx = Ctx { tf, end, span, stats_from, adjust: a.adjust, benches };
+    let ctx = Ctx { tf, end, span, stats_from, adjust: a.adjust, benches, known };
     let mut rows = futures::future::join_all(items.iter().map(|i| row(i, &cols, &ctx))).await;
     let col_of = |name: &str| cols.iter().position(|c| c.label == name);
     if !filter.is_empty() {
@@ -333,7 +362,8 @@ pub async fn table(items: &[String], name: &str, a: &ShowArgs, g: &Global, o: &O
         (None, Some(e)) => format!("as of {}", o.dt(e).format("%Y-%m-%d %H:%M")),
         (None, None) => o.full_time(now_ms()),
     };
-    println!("table {name}  {scope} {}  (from daily closes; changes and distances in %){shown_of}", o.tz_name());
+    let source = if crate::sets::is_set(name) { "Eastmoney list: changes in %, flows = net buying by large orders, CNY bn" } else { "from daily closes; changes and distances in %" };
+    println!("table {name}  {scope} {}  ({source}){shown_of}", o.tz_name());
     print!("{}{missing}", render::table(&t));
     Ok(())
 }

@@ -19,6 +19,12 @@ pub const PROVIDERS: &[&str] = &[
 /// as opposed to tradable prices.
 pub const POINT_PROVIDERS: &[&str] = &["fred", "alt", "cftc", "finra", "llama", "local", "nyfed", "treasury", "dtcc", "cboe", "cfets", "eastmoney", "mof", "ecb", "hkma", "farside"];
 
+/// Whether an id is a statistic with one value per point (not a traded price with bars). Eastmoney
+/// quote ids (market.code, e.g. eastmoney:116.00788) are traded prices.
+pub fn points(id: &InstrumentId) -> bool {
+    POINT_PROVIDERS.contains(&id.provider.as_str()) && !(id.provider == "eastmoney" && id.symbol.contains('.'))
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, PartialOrd, Ord)]
 pub struct InstrumentId {
     pub provider: String,

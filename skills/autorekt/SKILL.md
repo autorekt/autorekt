@@ -27,6 +27,7 @@ autorekt show BTC --view explain -r 2d                     # the biggest move, w
 autorekt show SPX BTC GOLD US10Y --view corr -r 30d         # correlations and which pairs broke
 autorekt show sectors --where 'chg(ytd) > 15' --sort 'chg(5d)'   # filter and sort a table
 autorekt show @watchlist.txt                               # the ids in a file, one per line
+autorekt show cn.industry --sort 'flow(5d)' --top 10 --bottom 10   # A-share boards by fund flow (also cn.concept, hk.southbound)
 autorekt show 0788.HK 2601.HK --vs 3033.HK --with 'beta(),upcap(),downcap()' -i 1M -r 5y --adjust
 autorekt search fed december             # find ids, prediction markets and news
 autorekt show SPY TLT -i 1d -r 1y --csv  # every bar of each series, for your own analysis

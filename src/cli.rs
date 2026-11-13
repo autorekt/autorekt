@@ -28,6 +28,8 @@ Timeframes: 1m 5m 15m 1h 4h 1d 1w.  Durations: 30m 6h 7d 90d.  Times: 2026-10-30
 const SHOW_HELP: &str = "WHAT is one of:
   (nothing)        the briefing: cross-asset board, volatility, liquidity, crypto positioning, odds, calendar, headlines
   a board          default crypto macro global fear liquidity rates commodities positioning sectors megacaps asia
+  a list           cn.industry cn.concept (A-share boards) hk.southbound (Stock Connect stocks): a table of
+                   every member with its changes and fund flows from one Eastmoney list
   funding [COINS]  funding across venues, annualized          prelaunch    pre-launch and pre-IPO perps
   odds             trending prediction markets                 news [TOPIC] headlines (markets, macro, crypto)
   calendar [CCY]   macro releases                              alerts       this machine's rule and monitor events
@@ -48,6 +50,8 @@ Examples:
   autorekt show sectors --with 'chg(5d)','chg(ytd)','from_high(52w)'
   autorekt show SPY QQQ IWM --from 2026-11-06 --to 2026-11-12
   autorekt show megacaps --with '+chg(ytd)'
+  autorekt show cn.industry --sort 'flow(5d)' --top 10 --bottom 10
+  autorekt show eastmoney:90.BK0475 -i 1d                   an A-share board (eastmoney market.code ids)
   autorekt show sectors --with 'chg(5d),chg(ytd)' --sort 'chg(5d)' --top 3 --bottom 3
   autorekt show @watchlist.txt --where 'from_high(52w) < -20' --sort '-chg(ytd)'
   autorekt show BTC --view explain -r 2d                 the biggest move, what moved with it, news
