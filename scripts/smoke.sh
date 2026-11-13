@@ -8,7 +8,7 @@ pass=0; fail=0; net=0
 # A source that cannot be reached, refuses this network or rate-limits it is not a bug in
 # autorekt: such checks pass and are listed as network problems. Anything else that misses
 # the expected output fails.
-NETWORK='cannot reach|throttles|error sending request|timed out|HTTP 403|HTTP 405|HTTP 429|HTTP 451|HTTP 5[0-9][0-9]|geo-restricted|access denied'
+NETWORK='cannot reach|throttles|handshake|error sending request|timed out|HTTP 403|HTTP 405|HTTP 429|HTTP 451|HTTP 5[0-9][0-9]|geo-restricted|access denied'
 check() {  # check "<description>" <expected substring> <command...>
   local desc=$1 want=$2; shift 2
   local out
@@ -80,6 +80,8 @@ check "beta against benchmark"  "beta()"              show yahoo:QQQ yahoo:IWM -
 check "eastmoney quote"         "summary"             show eastmoney:1.600519 -i 1d -n 5
 check "eastmoney board set"     "flow(5d)"            show cn.industry --top 3
 check "fundamentals"            "pb"                  show yahoo:0788.HK yahoo:600519.SS --with 'pe,pb'
+check "company calendar"        "calendar  NVDA"      show calendar NVDA AAPL
+check "company news"            "hkexnews"            show news yahoo:0788.HK -r 60d
 check "ids from a file"         "QQQ"                 show "@$AUTOREKT_HOME/list.txt"
 "$BIN" daemon stop >/dev/null 2>&1
 rm -rf "$AUTOREKT_HOME"

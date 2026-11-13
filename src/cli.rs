@@ -33,6 +33,8 @@ const SHOW_HELP: &str = "WHAT is one of:
   funding [COINS]  funding across venues, annualized          prelaunch    pre-launch and pre-IPO perps
   odds             trending prediction markets                 news [TOPIC] headlines (markets, macro, crypto)
   calendar [CCY]   macro releases                              alerts       this machine's rule and monitor events
+  news ID...       a stock's exchange filings (HKEXnews, SEC) and headlines, -r back (default 30d)
+  calendar ID...   a stock's earnings and dividend dates, -r ahead (default 60d)
   shares           links made with --share: what, views, expiry, URL
   ID               one series: text candles (or sparkline + table for single-value series),
                    then compressed earlier history, swings, levels, state, events and data checks
@@ -53,6 +55,8 @@ Examples:
   autorekt show cn.industry --sort 'flow(5d)' --top 10 --bottom 10
   autorekt show hk.southbound --with 'last,pe,pb,dy,mcap' --where 'dy > 6 and pb < 0.8' --sort dy
   autorekt show 600519.SS#pe -i 1d -r 5y                   a fundamental's history (A-shares)
+  autorekt show news 0788.HK AAPL -r 14d                    filings and headlines about these stocks
+  autorekt show calendar @holdings.txt                      their coming earnings and dividends
   autorekt show eastmoney:90.BK0475 -i 1d                   an A-share board (eastmoney market.code ids)
   autorekt show sectors --with 'chg(5d),chg(ytd)' --sort 'chg(5d)' --top 3 --bottom 3
   autorekt show @watchlist.txt --where 'from_high(52w) < -20' --sort '-chg(ytd)'

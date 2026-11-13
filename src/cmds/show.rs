@@ -48,7 +48,11 @@ pub async fn show(mut a: ShowArgs, g: &Global, o: &Opts) -> Result<()> {
         Some("funding") => crypto::funding(rest, g).await,
         Some("prelaunch") => crypto::prelaunch(g).await,
         Some("odds") => view::odds(a.limit.unwrap_or(10), g).await,
+        Some("news") if !rest.is_empty() && !matches!(rest[0].as_str(), "markets" | "macro" | "crypto") => view::company_news(&rest, now_ms() - parse_duration(a.range.as_deref().unwrap_or("30d"))? * 1000, a.min_severity, g, o).await,
         Some("news") => view::news(rest.first().map(|s| s.as_str()), since(&a)?, a.min_severity, a.limit.unwrap_or(40), g, o).await,
+        Some("calendar") if !rest.is_empty() && !rest.iter().all(|r| view::CURRENCIES.contains(&r.to_uppercase().as_str())) => {
+            view::company_calendar(&rest, now_ms() + parse_duration(a.range.as_deref().unwrap_or("60d"))? * 1000, g).await
+        }
         Some("calendar") => view::calendar(&rest, a.min_severity.max(2), g, o).await,
         Some("shares") => share::list(g),
         Some("alerts") => alerts::events(&a.range.clone().unwrap_or_else(|| "24h".into()), a.limit.unwrap_or(50), a.min_severity, g, o),

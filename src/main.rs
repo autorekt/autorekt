@@ -3,6 +3,7 @@
 mod cli;
 mod cmds;
 mod columns;
+mod company;
 mod config;
 mod daemon;
 mod expr;

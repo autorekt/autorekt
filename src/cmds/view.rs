@@ -246,6 +246,57 @@ pub async fn news(topic: Option<&str>, since: Option<i64>, min_severity: u8, lim
     Ok(())
 }
 
+/// Currency codes `show calendar` takes for macro releases; other words are stock ids.
+pub const CURRENCIES: &[&str] = &["USD", "EUR", "GBP", "JPY", "CNY", "AUD", "CAD", "CHF", "NZD", "ALL"];
+
+/// Filings and headlines about each stock since `since`, newest first.
+pub async fn company_news(ids: &[String], since: i64, min_severity: u8, g: &Global, o: &Opts) -> Result<()> {
+    let mut evs = Vec::new();
+    for id in ids {
+        evs.extend(crate::company::filings(id, since).await.with_context(|| format!("filings of {id}"))?);
+        let name = crate::company::name(id).await?;
+        let mut heads = feeds::google(&format!("\"{name}\"")).await.with_context(|| format!("headlines about {name}"))?;
+        heads.retain(|e| e.timestamp >= since);
+        for e in heads.iter_mut() {
+            e.symbols = vec![id.clone()];
+        }
+        evs.extend(heads);
+    }
+    evs.retain(|e| e.severity >= min_severity);
+    evs.sort_by(|a, b| b.timestamp.cmp(&a.timestamp));
+    if g.json {
+        return print_json(&evs);
+    }
+    println!("news  {}  filings (HKEXnews, SEC) and headlines (Google News) since {}", ids.join(" "), o.dt(since).format("%Y-%m-%d"));
+    print!("{}", series::events(&evs, o, true));
+    Ok(())
+}
+
+/// Each stock's earnings and dividend dates from a week ago until `until`.
+pub async fn company_calendar(ids: &[String], until: i64, g: &Global) -> Result<()> {
+    let mut evs = Vec::new();
+    for id in ids {
+        evs.extend(crate::company::events(id, now_ms() - 7 * 86_400_000).await.with_context(|| format!("events of {id}"))?);
+    }
+    evs.retain(|e| e.timestamp <= until);
+    evs.sort_by_key(|e| e.timestamp);
+    if g.json {
+        return print_json(&evs);
+    }
+    let now = now_ms();
+    let mut rows = vec![vec!["date".to_string(), "id".into(), "event".into(), "detail".into()]];
+    for e in &evs {
+        rows.push(vec![chrono::DateTime::from_timestamp_millis(e.timestamp).unwrap_or_default().format("%Y-%m-%d").to_string() + if e.timestamp < now - 86_400_000 { " (past)" } else { "" }, e.source.clone(), e.title.clone(), e.body.clone()]);
+    }
+    println!("calendar  {}  (earnings and dividends from a week ago on: Nasdaq for US, Eastmoney for Hong Kong)", ids.join(" "));
+    if evs.is_empty() {
+        println!("no earnings or dividend dates in this window (-r sets how far ahead to look)");
+        return Ok(());
+    }
+    print!("{}", render::table(&rows));
+    Ok(())
+}
+
 /// Macro releases from yesterday through next week (ForexFactory publishes two weeks).
 pub async fn calendar(ccys: &[String], min_impact: u8, g: &Global, o: &Opts) -> Result<()> {
     let mut evs = feeds::calendar().await?;
