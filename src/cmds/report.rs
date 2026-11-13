@@ -37,6 +37,11 @@ fn label(c: &Chart) -> String {
 }
 
 pub async fn report(path: &str, a: &ShowArgs, g: &Global, o: &Opts) -> Result<()> {
+    let source = std::fs::canonicalize(path).with_context(|| format!("reading {path}"))?.display().to_string();
+    if a.share && share::ttl_secs(&a.ttl)? == 0 {
+        let v = daemon::api("report", json!({"markdown": "", "blocks": [], "source": source, "name": a.name, "ttl_secs": 0})).await?;
+        return share::print_result(&v, g);
+    }
     let md = std::fs::read_to_string(path).with_context(|| format!("reading {path}"))?;
     let blocks: Vec<Vec<Chart>> = chart_blocks(&md).iter().map(|b| charts(b)).collect::<Result<_>>()?;
     // Every chart must load now, so a typo fails here instead of on the reader's screen.
@@ -79,12 +84,8 @@ pub async fn report(path: &str, a: &ShowArgs, g: &Global, o: &Opts) -> Result<()
                 .collect::<Result<Vec<_>>>()
         })
         .collect::<Result<_>>()?;
-    let v = daemon::api("report", json!({"markdown": md, "blocks": req, "ttl_secs": parse_duration(&a.ttl)?, "tunnel": if a.local { Some(false) } else { None }})).await?;
-    if g.json {
-        return print_json(&v);
-    }
-    println!("{}", v["url"].as_str().unwrap_or(""));
-    Ok(())
+    let v = daemon::api("report", json!({"markdown": md, "blocks": req, "source": source, "name": a.name, "ttl_secs": share::ttl_secs(&a.ttl)?, "tunnel": if a.local { Some(false) } else { None }})).await?;
+    share::print_result(&v, g)
 }
 
 /// The report as text: prose verbatim, each chart block as text charts.

@@ -480,6 +480,10 @@ nyfed:SOFR - fred:IORB -i 1d -r 90d
 ```
 ````
 
+Links survive restarts. Sharing the same file again updates the same link; `--name` makes a
+separate one, `--ttl 30d` sets how long it lives and `--ttl 0` removes it. `autorekt show shares`
+lists every live link with its views and expiry.
+
 ## License
 
 MIT

@@ -1,6 +1,6 @@
-//! Shared reports: markdown with ```chart blocks, rendered server-side (raw HTML escaped) into
-//! the same page template as single charts. Each chart line becomes a chart share; a block
-//! with several lines becomes one component with tabs.
+//! Shared reports: markdown with ```chart blocks, kept in the store and rendered on each visit
+//! (raw HTML escaped) into the same page template as single charts. Each chart line becomes a
+//! chart share inside the report; a block with several lines becomes one component with tabs.
 
 use super::*;
 use pulldown_cmark::{html, CodeBlockKind, CowStr, Event as Md, HeadingLevel, Options, Parser, Tag, TagEnd};
@@ -26,16 +26,22 @@ pub struct ChartReq {
 pub(super) struct ReportReq {
     markdown: String,
     blocks: Vec<Vec<ChartReq>>,
+    /// The report's file: sharing the same file (and name) again updates the same link.
+    source: String,
+    #[serde(default)]
+    name: Option<String>,
     #[serde(default = "d_ttl")]
     ttl_secs: i64,
     #[serde(default)]
     tunnel: Option<bool>,
 }
 
-pub struct Report {
-    pub title: String,
-    pub html: String,
-    pub expires: i64,
+/// What a report share stores: its markdown and, per ```chart block, the (token, label) of
+/// each chart.
+#[derive(Serialize, Deserialize)]
+struct Doc {
+    markdown: String,
+    charts: Vec<Vec<(String, String)>>,
 }
 
 fn options() -> Options {
@@ -114,34 +120,52 @@ pub(super) async fn api_report(State(st): State<St>, h: HeaderMap, Json(r): Json
     if !authed(&info, &h) {
         return err(StatusCode::UNAUTHORIZED, "bad token");
     }
+    let key = format!("doc:{}|{}", r.source, r.name.clone().unwrap_or_default());
+    if r.ttl_secs == 0 {
+        return match revoke(&key) {
+            Ok(n) => Json(json!({"revoked": n})).into_response(),
+            Err(e) => err(StatusCode::INTERNAL_SERVER_ERROR, format!("{e:#}")),
+        };
+    }
     let found = chart_blocks(&r.markdown).len();
     if found != r.blocks.len() {
         return err(StatusCode::BAD_REQUEST, format!("{found} chart blocks in the markdown but {} sent", r.blocks.len()));
     }
-    let expires = now_ms() + r.ttl_secs * 1000;
-    let mut blocks = Vec::new();
-    for b in &r.blocks {
-        let mut charts = Vec::new();
-        for c in b {
-            let spec = ShareSpec { kind: "candles".into(), id: c.id.clone(), tf: c.tf.clone(), limit: c.limit.unwrap_or(200).min(2000), expires, title: Some(c.label.clone()), overlays: c.overlays.clone(), range_secs: c.range_secs, end: c.end };
-            charts.push((insert_share(&st, spec).await, c.label.clone()));
-        }
-        blocks.push(block_html(&charts));
-    }
-    let (title, html) = render(&r.markdown, &blocks);
-    let token = rand_token(12);
-    st.reports.lock().await.insert(token.clone(), Report { title: if title.is_empty() { "report".into() } else { title }, html, expires });
-    match public_url(&st, info.port, r.tunnel, &format!("r/{token}")).await {
-        Ok(v) => Json(v).into_response(),
-        Err(resp) => resp,
+    match store_report(&key, &r) {
+        Ok(token) => match public_url(&st, info.port, r.tunnel, &format!("r/{token}")).await {
+            Ok(v) => Json(v).into_response(),
+            Err(resp) => resp,
+        },
+        Err(e) => err(StatusCode::INTERNAL_SERVER_ERROR, format!("{e:#}")),
     }
 }
 
-pub(super) async fn report_page(State(st): State<St>, Path(token): Path<String>) -> Response {
-    let reports = st.reports.lock().await;
-    match reports.get(&token) {
-        Some(r) if r.expires > now_ms() => Html(page(&r.title, "report", &format!("<article>\n{}</article>", r.html))).into_response(),
-        _ => (StatusCode::NOT_FOUND, Html("<h3>This report link has expired.</h3>")).into_response(),
+/// Store the report under `key` (replacing the charts of an earlier version); returns its token.
+fn store_report(key: &str, r: &ReportReq) -> Result<String> {
+    let title = render(&r.markdown, &[]).0;
+    let title = if title.is_empty() { "report".to_string() } else { title };
+    let token = put_share(key, "doc", &title, &Doc { markdown: String::new(), charts: vec![] }, None, "manual", r.ttl_secs)?;
+    store::share_drop_children(&store::open()?, &token)?;
+    let mut charts = Vec::new();
+    for (n, b) in r.blocks.iter().enumerate() {
+        let mut block = Vec::new();
+        for (m, c) in b.iter().enumerate() {
+            let spec = ShareSpec { kind: "candles".into(), id: c.id.clone(), tf: c.tf.clone(), limit: c.limit.unwrap_or(200).min(2000), title: Some(c.label.clone()), overlays: c.overlays.clone(), range_secs: c.range_secs, end: c.end };
+            block.push((put_share(&format!("in:{token}:{n}:{m}"), "chart", &c.label, &spec, Some(&token), "manual", r.ttl_secs)?, c.label.clone()));
+        }
+        charts.push(block);
+    }
+    put_share(key, "doc", &title, &Doc { markdown: r.markdown.clone(), charts }, None, "manual", r.ttl_secs)
+}
+
+pub(super) async fn report_page(Path(token): Path<String>) -> Response {
+    let doc = get_share(&token, true).filter(|s| s.kind == "doc").and_then(|s| serde_json::from_str::<Doc>(&s.spec).ok().map(|d| (s.title, d)));
+    match doc {
+        Some((title, d)) => {
+            let blocks: Vec<String> = d.charts.iter().map(|b| block_html(b)).collect();
+            Html(page(&title, "report", &format!("<article>\n{}</article>", render(&d.markdown, &blocks).1))).into_response()
+        }
+        None => (StatusCode::NOT_FOUND, Html("<h3>This report link has expired or was removed.</h3>")).into_response(),
     }
 }
 

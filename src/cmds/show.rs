@@ -4,7 +4,7 @@
 use super::*;
 use crate::cli::ShowArgs;
 
-const VIEWS: &[&str] = &["funding", "prelaunch", "odds", "news", "calendar", "alerts"];
+const VIEWS: &[&str] = &["funding", "prelaunch", "odds", "news", "calendar", "alerts", "shares"];
 
 pub async fn show(a: ShowArgs, g: &Global, o: &Opts) -> Result<()> {
     let first = a.what.first().map(|s| s.as_str());
@@ -25,6 +25,7 @@ pub async fn show(a: ShowArgs, g: &Global, o: &Opts) -> Result<()> {
         Some("odds") => view::odds(a.limit.unwrap_or(10), g).await,
         Some("news") => view::news(rest.first().map(|s| s.as_str()), since(&a)?, a.min_severity, a.limit.unwrap_or(40), g, o).await,
         Some("calendar") => view::calendar(&rest, a.min_severity.max(2), g, o).await,
+        Some("shares") => share::list(g),
         Some("alerts") => alerts::events(&a.range.clone().unwrap_or_else(|| "24h".into()), a.limit.unwrap_or(50), a.min_severity, g, o),
         Some(w) if a.what.len() == 1 && w.chars().all(|c| c.is_ascii_lowercase()) && !ids::is_known_alias(w) => {
             bail!("'{w}' is not a view or a known alias. Views: {}. For anything else: autorekt search {w}", view_names().join(", "))
@@ -46,7 +47,7 @@ async fn one(a: &ShowArgs, g: &Global, o: &Opts) -> Result<()> {
     let target = &a.what[0];
     let s = view::Series { id: target.clone(), interval: a.interval.clone().unwrap_or_else(|| "1h".into()), limit: a.limit, range: a.range.clone(), at: a.at.clone(), news: a.news, with: a.with.clone(), context: true };
     if a.share {
-        return share::share(&s, &a.overlay, &a.ttl, a.local, g).await;
+        return share::share(&s, a, g).await;
     }
     if !expr::is_expression(target) {
         let id = ids::parse(target)?;

@@ -124,8 +124,6 @@ pub async fn api(path: &str, body: Value) -> Result<Value> {
 
 struct Shared {
     info: Mutex<Info>,
-    shares: Mutex<HashMap<String, ShareSpec>>,
-    reports: Mutex<HashMap<String, Report>>,
     cache: Mutex<HashMap<String, (i64, Value)>>,
     monitors: Mutex<HashMap<String, MonitorState>>,
     tunnel: Mutex<Option<tokio::process::Child>>,
@@ -167,11 +165,8 @@ pub async fn run() -> Result<()> {
     let port = listener.local_addr()?.port();
     let info = Info { pid: std::process::id(), port, token: rand_token(16), started: now_ms(), public_url: config::get().share_base_url.clone() };
     std::fs::write(info_path(), serde_json::to_string_pretty(&info)?)?;
-    let shares = load_shares();
     let st: St = Arc::new(Shared {
         info: Mutex::new(info.clone()),
-        shares: Mutex::new(shares),
-        reports: Mutex::new(HashMap::new()),
         cache: Mutex::new(HashMap::new()),
         monitors: Mutex::new(HashMap::new()),
         tunnel: Mutex::new(None),

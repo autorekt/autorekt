@@ -63,6 +63,8 @@ check "show changes"            "diff for"            show crypto --changes --as
 printf '# Smoke report\n\nText.\n\n```chart\nBTC -i 1h -r 2d\nRSP / SPY -i 1d -r 30d\n```\n' > "$AUTOREKT_HOME/r.md"
 check "report preview"          "[chart] RSP / SPY"   show "$AUTOREKT_HOME/r.md"
 check "report publish"          "/r/"                 show "$AUTOREKT_HOME/r.md" --share --local
+check "shares list"             "Smoke report"        show shares
+check "share remove"            "link removed"        show "$AUTOREKT_HOME/r.md" --share --ttl 0
 check "why move"                "what else moved"     why BTC -r 2d
 check "why correlations"        "correlation"         why BTC ETH -r 30d
 check "why breaks"              "breaks:"             why BTC ETH GOLD -r 60d

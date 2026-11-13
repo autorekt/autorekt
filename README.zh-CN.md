@@ -442,6 +442,8 @@ nyfed:SOFR - fred:IORB -i 1d -r 90d
 ```
 ````
 
+链接在重启后仍然有效。再次分享同一个文件会更新同一个链接；`--name` 另开一个链接，`--ttl 30d` 设定有效期，`--ttl 0` 删除链接。`autorekt show shares` 列出所有有效链接及其访问次数和到期时间。
+
 ## 许可证
 
 MIT
