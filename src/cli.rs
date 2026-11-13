@@ -44,6 +44,9 @@ Examples:
   autorekt show fear
   autorekt show BTC -i 4h -n 30
   autorekt show GOLD -i 1d --with 'ta.rsi($,14)' --with 'ta.sma($,50)'
+  autorekt show sectors --with 'chg(5d)','chg(ytd)','from_high(52w)'
+  autorekt show SPY QQQ IWM --from 2026-11-06 --to 2026-11-12
+  autorekt show megacaps --with '+chg(ytd)'
   autorekt show 'fred:SOFR - fred:IORB' -i 1d -r 90d
   autorekt show NQ -i 15m --at 2026-10-30T20:00:00Z
   autorekt show BTC ETH 'RSP / SPY' --changes
@@ -191,6 +194,12 @@ pub struct ShowArgs {
     /// Look at the past: the view ends at this time.
     #[arg(long)]
     pub at: Option<String>,
+    /// Start of an explicit span (with --to, default now): the chart's window, or the change a table shows.
+    #[arg(long)]
+    pub from: Option<String>,
+    /// End of the span started by --from.
+    #[arg(long)]
+    pub to: Option<String>,
     /// Only what changed since this agent last looked.
     #[arg(long)]
     pub changes: bool,
@@ -203,7 +212,10 @@ pub struct ShowArgs {
     /// Overlay matching headlines on a chart.
     #[arg(long)]
     pub news: bool,
-    /// Extra column for a chart: an expression where $ is the series, e.g. 'ta.rsi($,14)'.
+    /// A column: an expression where $ is the series ('ta.rsi($,14)'), or a table column
+    /// (last, chg(5d), chg(ytd), chg(2024-09-13..2024-10-07), high(52w), low(52w), from_high(52w),
+    /// from_low(52w), dd(5y), vol(20d), vol_ratio(20)). Several ids or a board make a table with
+    /// these columns; a leading + adds them to the board's own.
     #[arg(long)]
     pub with: Vec<String>,
     /// Print a public link to an interactive chart (or a FILE.md report) instead of text.

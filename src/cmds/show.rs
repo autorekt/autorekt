@@ -14,6 +14,9 @@ pub async fn show(a: ShowArgs, g: &Global, o: &Opts) -> Result<()> {
         None => brief::brief(hours(&a, 12)?, g, o).await,
         Some(set) if config::board(set).is_some() && rest.is_empty() => {
             let items = config::board(set).unwrap();
+            if table::wanted_table(&a, true) {
+                return table::table(&items, set, &a, g, o).await;
+            }
             if a.changes {
                 alerts::diff(&a.agent, &items, set, g, o).await
             } else {
@@ -31,6 +34,7 @@ pub async fn show(a: ShowArgs, g: &Global, o: &Opts) -> Result<()> {
             bail!("'{w}' is not a view or a known alias. Views: {}. For anything else: autorekt search {w}", view_names().join(", "))
         }
         Some(f) if a.what.len() == 1 && f.ends_with(".md") => report::report(f, &a, g, o).await,
+        Some(_) if table::wanted_table(&a, a.what.len() > 1) && !g.csv => table::table(&a.what, "ids", &a, g, o).await,
         Some(_) if a.what.len() == 1 => one(&a, g, o).await,
         Some(_) if g.csv => view::csv_many(&a.what.iter().map(|id| series(&a, id)).collect::<Vec<_>>(), o).await,
         Some(_) => {
@@ -59,8 +63,14 @@ async fn one(a: &ShowArgs, g: &Global, o: &Opts) -> Result<()> {
     view::chart(&s, g, o).await
 }
 
+/// The series an id names, with --from/--to as the window when given.
 fn series(a: &ShowArgs, id: &str) -> view::Series {
-    view::Series { id: id.to_string(), interval: a.interval.clone().unwrap_or_else(|| "1h".into()), limit: a.limit, range: a.range.clone(), at: a.at.clone(), news: a.news, with: a.with.clone(), context: true }
+    let (mut range, mut at) = (a.range.clone(), a.at.clone());
+    if let Ok(Some((start, end))) = table::command_span(a) {
+        range = Some(format!("{}h", ((end - start + 3_599_999) / 3_600_000).max(1)));
+        at = Some(end.to_string());
+    }
+    view::Series { id: id.to_string(), interval: a.interval.clone().unwrap_or_else(|| "1h".into()), limit: a.limit, range, at, news: a.news, with: a.with.clone(), context: true }
 }
 
 fn hours(a: &ShowArgs, default: i64) -> Result<i64> {

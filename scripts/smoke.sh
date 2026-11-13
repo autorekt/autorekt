@@ -65,6 +65,9 @@ check "report preview"          "[chart] RSP / SPY"   show "$AUTOREKT_HOME/r.md"
 check "report publish"          "/r/"                 show "$AUTOREKT_HOME/r.md" --share --local
 check "csv several series"      "yahoo:QQQ,"          show yahoo:SPY yahoo:QQQ -i 1d -n 3 --csv
 check "markdown table"          "| --- |"             show yahoo:SPY yahoo:QQQ --md
+check "table columns"           "from_high(52w)"      show sectors --with 'chg(5d),from_high(52w)'
+check "table span"              "chg"                 show yahoo:SPY yahoo:QQQ --from 2026-01-02 --to 2026-01-09
+check "board plus column"       "chg(ytd)"            show megacaps --with '+chg(ytd)'
 check "shares list"             "Smoke report"        show shares
 check "share remove"            "link removed"        show "$AUTOREKT_HOME/r.md" --share --ttl 0
 check "why move"                "what else moved"     why BTC -r 2d

@@ -258,13 +258,20 @@ pub async fn build(items: &[String]) -> Vec<BoardRow> {
 }
 
 pub fn render(name: &str, rows: &[BoardRow], o: &Opts) -> String {
-    let mut t: Vec<Vec<String>> = vec![vec!["id".into(), "last".into(), "1h".into(), "day".into(), "5d".into(), "30d".into(), "trend".into(), "flags".into()]];
+    render_with(name, rows, &[], &[], o)
+}
+
+/// The board with extra columns: `headers`, and per row (in order) its `cells`.
+pub fn render_with(name: &str, rows: &[BoardRow], headers: &[String], cells: &[Vec<String>], o: &Opts) -> String {
+    let mut t: Vec<Vec<String>> = vec![vec!["id".into(), "last".into(), "1h".into(), "day".into(), "5d".into(), "30d".into(), "trend".into()]];
+    t[0].extend(headers.iter().cloned());
+    t[0].push("flags".into());
     let f = |x: Option<f64>| match x {
         Some(v) if v.is_finite() => format!("{v:+.2}%"),
         _ => "-".into(),
     };
     let mut missing = String::new();
-    for r in rows {
+    for (i, r) in rows.iter().enumerate() {
         if let Some(e) = &r.error {
             missing.push_str(&format!("missing  {}: {}\n", r.label, e));
             continue;
@@ -281,16 +288,10 @@ pub fn render(name: &str, rows: &[BoardRow], o: &Opts) -> String {
             (None, x) => f(x),
         };
         let last = if pp { format!("{:.1}%", r.last * 100.0) } else if r.last.abs() >= 1e7 { fmt_qty(r.last) } else { fmt_auto(r.last) };
-        t.push(vec![
-            r.label.clone(),
-            last,
-            fmtc(r.chg_1h),
-            fmtc(r.chg_day),
-            fmtc(r.chg_5d),
-            fmtc(r.chg_30d),
-            spark(&squeeze(&r.trend, 24), o.ascii),
-            r.flags.join(", "),
-        ]);
+        let mut line = vec![r.label.clone(), last, fmtc(r.chg_1h), fmtc(r.chg_day), fmtc(r.chg_5d), fmtc(r.chg_30d), spark(&squeeze(&r.trend, 24), o.ascii)];
+        line.extend(cells.get(i).cloned().unwrap_or_default());
+        line.push(r.flags.join(", "));
+        t.push(line);
     }
     let now = o.full_time(crate::model::now_ms());
     format!(
