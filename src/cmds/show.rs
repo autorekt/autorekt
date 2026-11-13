@@ -23,6 +23,12 @@ pub async fn show(mut a: ShowArgs, g: &Global, o: &Opts) -> Result<()> {
         }
         Some(v) => bail!("unknown --view '{v}' (chart, table, corr, explain)"),
     }
+    if let [one] = a.what.as_slice() {
+        if crate::sets::is_set(one) {
+            let name = one.clone();
+            return table::table(&[name.clone()], &name, &a, g, o).await;
+        }
+    }
     let first = a.what.first().map(|s| s.as_str());
     let rest: Vec<String> = a.what.iter().skip(1).cloned().collect();
     match first {

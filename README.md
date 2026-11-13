@@ -459,7 +459,7 @@ autorekt says so instead of quietly showing something else.
 - **Markets** Yahoo Finance for stocks, ETFs, indices, futures, FX and commodities; Cboe option chains for dealer gamma, skew, put/call and same-day expiries
 - **Rates and dollar liquidity** FRED; the New York Fed for the SOFR distribution, repo facility use and primary dealer positions; the US Treasury for the daily cash balance and auctions; SOFR swap rates from publicly reported swap trades (DTCC); the ECB; Japan's Ministry of Finance
 - **Positioning** CFTC Commitments of Traders, FINRA off-exchange short volume, funding rates, open interest, long/short ratios and liquidations
-- **China and Hong Kong** Yuan central parity fixings and SHIBOR (CFETS); government bond yields, margin debt, Stock Connect flows and breadth (Eastmoney); HIBOR and the aggregate balance (HKMA)
+- **China and Hong Kong** Yuan central parity fixings and SHIBOR (CFETS); government bond yields, margin debt, Stock Connect flows and breadth, A-share and Hong Kong quotes, industry and concept boards with fund flows (Eastmoney, `autorekt show cn.industry --sort 'flow(5d)' --top 10`); HIBOR and the aggregate balance (HKMA)
 - **Odds, news and the calendar** Polymarket, Kalshi, financial and crypto news feeds, Google News search, the ForexFactory calendar, CNN and crypto Fear & Greed
 
 ## Share what it found

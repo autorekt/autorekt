@@ -14,6 +14,7 @@ mod os;
 mod providers;
 mod render;
 mod rules;
+mod sets;
 mod store;
 mod structure;
 
