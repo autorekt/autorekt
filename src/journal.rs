@@ -7,6 +7,12 @@
 //! - `positions`: id qty cost ccy, holdings from before the trades start.
 //! - `orders`: ref side id qty limit placed, and optionally type stop target expires note.
 //! - `dates`: date what note.
+//! - `instruments`: id multiplier, for futures and FX contracts (value = qty * price * multiplier).
+//! - `watch`: rules in the same YAML as rule files (`rules: [...]`), installed by `watch FILE.md`.
+//!
+//! In `account=sim` orders (optionally with stop and target), fills and exits follow from daily
+//! bars: a limit fills when the bar trades through it (at the open if it gaps past), then the
+//! stop or the target closes the position; a bar that touches both counts the stop first.
 //!
 //! A block's info line can set defaults for every row, e.g. ```` ```trades account=company ````.
 //! Text outside the blocks is notes; a heading that names an id belongs to that id.
@@ -22,13 +28,16 @@ pub struct Journal {
     pub positions: Vec<Row>,
     pub orders: Vec<Row>,
     pub dates: Vec<Row>,
+    pub instruments: Vec<Row>,
+    /// The YAML of the `watch` blocks.
+    pub watch: String,
     /// (heading, text) of each section, in order.
     pub notes: Vec<(String, String)>,
     /// Lines of the `show` blocks.
     pub views: Vec<String>,
 }
 
-const KINDS: &[&str] = &["trades", "positions", "orders", "dates"];
+const KINDS: &[&str] = &["trades", "positions", "orders", "dates", "instruments", "watch"];
 
 /// Rows of a pipe table; `defaults` fill empty or missing cells.
 fn table(body: &str, defaults: &Row, where_: &str) -> Result<Vec<Row>> {
@@ -69,12 +78,14 @@ pub fn parse(md: &str) -> Result<Journal> {
                 block = None;
                 match kind.as_str() {
                     "show" => j.views.extend(body.lines().map(str::trim).filter(|l| !l.is_empty()).map(String::from)),
+                    "watch" => j.watch.push_str(&body),
                     k => {
                         let rows = table(&body, &defaults, &format!("```{k} block"))?;
                         match k {
                             "trades" => j.trades.extend(rows),
                             "positions" => j.positions.extend(rows),
                             "orders" => j.orders.extend(rows),
+                            "instruments" => j.instruments.extend(rows),
                             _ => j.dates.extend(rows),
                         }
                     }
@@ -131,6 +142,72 @@ pub struct Holding {
     pub income: f64,
 }
 
+/// The contract multiplier of an id (1 unless the instruments block says otherwise).
+pub fn multiplier(j: &Journal, id: &str) -> f64 {
+    j.instruments.iter().find(|r| r.get("id").is_some_and(|i| i == id)).and_then(|r| r.get("multiplier")?.parse().ok()).unwrap_or(1.0)
+}
+
+/// The trades that `account=sim` orders make, given each id's daily bars (oldest first).
+pub fn simulate(j: &Journal, bars: &BTreeMap<String, Vec<crate::model::Bar>>) -> Vec<Row> {
+    let mut out = Vec::new();
+    for o in j.orders.iter().filter(|o| o.get("account").is_some_and(|a| a == "sim")) {
+        let (Some(id), Some(limit)) = (o.get("id"), o.get("limit").and_then(|v| v.parse::<f64>().ok())) else { continue };
+        let Some(b) = bars.get(id) else { continue };
+        let placed = o.get("placed").and_then(|p| crate::model::parse_time(p).ok()).unwrap_or(0);
+        let expires = o.get("expires").and_then(|p| crate::model::parse_time(p).ok()).unwrap_or(i64::MAX);
+        let sell = o.get("side").is_some_and(|s| s.eq_ignore_ascii_case("sell"));
+        let qty: f64 = o.get("qty").and_then(|v| v.parse().ok()).unwrap_or(0.0);
+        let stop = o.get("stop").and_then(|v| v.parse::<f64>().ok());
+        let target = o.get("target").and_then(|v| v.parse::<f64>().ok());
+        let name = o.get("ref").cloned().unwrap_or_default();
+        let trade = |t: i64, action: &str, price: f64, note: String| {
+            let mut r = o.clone();
+            r.insert("date".into(), chrono::DateTime::from_timestamp_millis(t).unwrap_or_default().format("%Y-%m-%d").to_string());
+            r.insert("action".into(), action.into());
+            r.insert("price".into(), price.to_string());
+            r.insert("qty".into(), qty.to_string());
+            r.insert("note".into(), note);
+            r
+        };
+        let mut i = b.iter().position(|x| x.timestamp >= placed).unwrap_or(b.len());
+        let fill = loop {
+            let Some(x) = b.get(i) else { break None };
+            if x.timestamp > expires {
+                break None;
+            }
+            if !sell && x.low <= limit {
+                break Some((x.timestamp, x.open.min(limit)));
+            }
+            if sell && x.high >= limit {
+                break Some((x.timestamp, x.open.max(limit)));
+            }
+            i += 1;
+        };
+        let Some((t, p)) = fill else { continue };
+        out.push(trade(t, if sell { "sell" } else { "buy" }, p, format!("{name} filled (sim)")));
+        // Exits from the bar after the fill on, or the fill bar's own close side.
+        for x in &b[i..] {
+            let stop_hit = stop.is_some_and(|s| if sell { x.high >= s } else { x.low <= s });
+            let target_hit = target.is_some_and(|g| if sell { x.low <= g } else { x.high >= g });
+            if x.timestamp == t && !stop_hit {
+                continue;
+            }
+            let (price, why) = if stop_hit {
+                let s = stop.unwrap();
+                (if sell { x.open.max(s) } else { x.open.min(s) }, "stop")
+            } else if target_hit {
+                let g = target.unwrap();
+                (if sell { x.open.min(g) } else { x.open.max(g) }, "target")
+            } else {
+                continue;
+            };
+            out.push(trade(x.timestamp, if sell { "buy" } else { "sell" }, price, format!("{name} {why} (sim{})", if stop_hit && target_hit { ", bar touched both: stop counted first" } else { "" })));
+            break;
+        }
+    }
+    out
+}
+
 /// Holdings and cash (account, ccy) -> amount, as of `until` (ms; trades after it are ignored).
 pub fn book(j: &Journal, until: i64) -> Result<(Vec<Holding>, BTreeMap<(String, String), f64>)> {
     let mut h: Vec<Holding> = Vec::new();
@@ -156,14 +233,14 @@ pub fn book(j: &Journal, until: i64) -> Result<(Vec<Holding>, BTreeMap<(String, 
                 let id = r.get("id").with_context(|| format!("{w}: no id"))?.clone();
                 let (qty, price) = (num(r, "qty", &w)?, num(r, "price", &w)?);
                 let q = if action == "sell" { -qty.abs() } else { qty.abs() };
-                add_cash(&ccy, -q * price - fee);
+                add_cash(&ccy, -q * price * multiplier(j, &id) - fee);
                 match h.iter_mut().find(|x| x.account == account && x.id == id) {
-                    Some(x) if q > 0.0 => {
+                    Some(x) if q > 0.0 && x.qty >= 0.0 => {
                         x.cost = (x.cost * x.qty + q * price + fee) / (x.qty + q);
                         x.qty += q;
                     }
                     Some(x) => x.qty += q,
-                    None if q > 0.0 => h.push(Holding { account: account.clone(), id, qty: q, cost: (q * price + fee) / q, ccy: ccy.clone(), income: 0.0 }),
+                    None if q > 0.0 || account == "sim" => h.push(Holding { account: account.clone(), id, qty: q, cost: (q.abs() * price + fee) / q.abs(), ccy: ccy.clone(), income: 0.0 }),
                     None => bail!("{w}: selling {id}, which is not held"),
                 }
             }
@@ -212,5 +289,26 @@ mod tests {
         let (h, _) = book(&j, crate::model::parse_time("2026-11-15").unwrap()).unwrap();
         assert_eq!(h.iter().find(|x| x.id == "0788.HK").unwrap().qty, 500.0, "--at replays trades up to a date");
         assert!(parse("```trades\n| a |\n| 1 | 2 |\n```\n").is_err());
+    }
+
+    #[test]
+    fn sim_orders_fill_then_stop_or_target() {
+        use crate::model::Bar;
+        let day = 86_400_000;
+        let t0 = crate::model::parse_time("2026-11-09").unwrap();
+        let bar = |i: i64, o: f64, h: f64, l: f64| Bar { timestamp: t0 + i * day, open: o, high: h, low: l, close: o, volume: 0.0, closed: true };
+        let md = "```orders account=sim\n| ref | side | id | qty | limit | stop | target | placed |\n| g | buy | GC | 4 | 3990 | 3870 | 4200 | 2026-11-09 |\n```\n```instruments\n| id | multiplier |\n| GC | 10 |\n```\n";
+        let j = parse(md).unwrap();
+        let mut bars = BTreeMap::new();
+        bars.insert("GC".to_string(), vec![bar(0, 4100.0, 4150.0, 4060.0), bar(1, 4070.0, 4075.0, 3989.0), bar(2, 4000.0, 4005.0, 3856.0)]);
+        let t = simulate(&j, &bars);
+        assert_eq!(t.len(), 2);
+        assert_eq!((t[0]["action"].as_str(), t[0]["price"].as_str()), ("buy", "3990"));
+        assert_eq!((t[1]["action"].as_str(), t[1]["price"].as_str()), ("sell", "3870"));
+        let mut j2 = j.clone();
+        j2.trades = t;
+        let (h, cash) = book(&j2, i64::MAX).unwrap();
+        assert!(h.is_empty());
+        assert!((cash[&("sim".to_string(), String::new())] - (3870.0 - 3990.0) * 4.0 * 10.0).abs() < 1e-6);
     }
 }

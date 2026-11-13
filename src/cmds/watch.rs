@@ -25,6 +25,11 @@ pub async fn watch(a: WatchArgs, g: &Global, o: &Opts) -> Result<()> {
     if a.python {
         return monitor::monitor_new(&target);
     }
+    if target.ends_with(".md") {
+        let (file, n) = journal::rules(&target)?;
+        println!("{n} rules from {target} written to {} (run this again after editing the journal)", file.display());
+        return Ok(());
+    }
     if a.rm {
         let monitor = config::home().join("monitors").join(format!("{target}.py"));
         if rules::find(&target).is_err() && monitor.exists() {

@@ -53,7 +53,7 @@ lists the providers.
 Rules are expressions the daemon evaluates; a hook runs when one holds.
 
 ```sh
-autorekt watch vix_inv --expr 'VIX - VIX3M > 1.5' --tf 15m --for 30m --hook 'notify.sh'
+autorekt watch vix_inv --expr 'VIX - VIX3M > 1.5' -i 15m --for 30m --hook 'notify.sh'
 autorekt watch 'pct(BTC, "1h") < -3' --test -r 30d   # backtest before relying on a rule
 autorekt watch --wait --timeout 1h                   # block until a rule fires
 autorekt watch                                       # list rules and their state
@@ -76,6 +76,7 @@ VIX -i 1h -r 5d
 
 ```sh
 autorekt show journal.md                   # a journal: live holdings, orders, dates, what needs attention
+autorekt show journal.md --changes         # only what newly needs attention; watch journal.md alerts on it
 autorekt show report.md --share            # again later: updates the same link
 autorekt show report.md --share --ttl 0    # remove it
 autorekt show shares                       # every live link, views, expiry

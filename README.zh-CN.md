@@ -397,7 +397,7 @@ kalshi:KXFEDDECISION-26DEC-H26  Will the Federal Reserve Hike rates by >25bps at
 <summary><code>autorekt watch 'pct(BTC, "1h") &lt; -1.5' --test</code></summary>
 
 ```
-$ autorekt watch 'pct(BTC, "1h") < -1.5' --test --tf 5m -r 14d --cooldown 6h
+$ autorekt watch 'pct(BTC, "1h") < -1.5' --test -i 5m -r 14d --cooldown 6h
 backtest adhoc  expr: pct(BTC, "1h") < -1.5  tf 5m  range 14d  for 0  cooldown 6h  ->  2 firing(s) over 4032 bars
 time                value  BTC +1h     +4h    +24h
 2026-10-29 20:40  -2.4493   +0.25%  -2.00%  -2.46%
@@ -454,7 +454,7 @@ share_tunnel_token_file: ~/.autorekt/tunnel.token
 
 `autorekt daemon tunnel` 显示隧道状态；`autorekt daemon tunnel stop` 停止隧道。
 
-journal 是一份 markdown 文档，用竖线表格记录你的交易：```` ```trades ````（date action id qty price ccy fee）、```` ```positions ````、```` ```orders ````（ref side id qty limit placed）和 ```` ```dates ````。`autorekt show journal.md` 显示实时的持仓、现金、盈亏、挂单和日期，并先列出需要处理的事：价格已经到达的挂单、本周的日期。`--in CNY` 换算币种，`--at 2026-06-30` 按当天之前的交易回看，show 块里的 `@this` 代表 journal 里的所有代码。分享时，journal 默认不显示数量和金额，加 `--show-amounts` 才显示。
+journal 是一份 markdown 文档，用竖线表格记录你的交易：```` ```trades ````（date action id qty price ccy fee）、```` ```positions ````、```` ```orders ````（ref side id qty limit placed）和 ```` ```dates ````。`autorekt show journal.md` 显示实时的持仓、现金、盈亏、挂单和日期，并先列出需要处理的事：价格已经到达的挂单、本周的日期。`--in CNY` 换算币种，`--at 2026-06-30` 按当天之前的交易回看，show 块里的 `@this` 代表 journal 里的所有代码。分享时，journal 默认不显示数量和金额，加 `--show-amounts` 才显示。`autorekt watch journal.md` 把其中未成交的挂单和日期（以及 ```` ```watch ```` 块里的规则）变成提醒，`--changes` 只显示新出现的需要处理的事；`account=sim` 表格里的挂单（可带止损和目标价，用 ```` ```instruments ```` 块设定合约乘数）会按每日 K 线自动成交和平仓，用于模拟交易。
 
 ## 许可证
 

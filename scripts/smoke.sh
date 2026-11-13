@@ -49,7 +49,7 @@ check "show news"               " "                   show news -n 3
 check "show calendar"           "calendar"            show calendar
 check "show funding"            "okx"                 show funding BTC
 check "show unknown view"       "not a view"          show foo
-check "watch backtest"          "backtest"            watch 'pct(BTC, "1h") < -1' --test --tf 5m -r 3d
+check "watch backtest"          "backtest"            watch 'pct(BTC, "1h") < -1' --test -i 5m -r 3d
 "$BIN" daemon start >/dev/null
 "$BIN" watch --wait --timeout 120s > "$AUTOREKT_HOME/wait.out" 2>&1 &
 waiter=$!
@@ -70,6 +70,8 @@ check "table span"              "chg"                 show yahoo:SPY yahoo:QQQ -
 check "board plus column"       "chg(ytd)"            show megacaps --with '+chg(ytd)'
 printf '# J\n\n```trades\n| date | action | id | qty | price | ccy |\n| 2026-01-05 | buy | yahoo:SPY | 2 | 600 | USD |\n```\n\n```orders\n| ref | side | id | qty | limit | placed |\n| o1 | buy | yahoo:QQQ | 1 | 1 | 2026-11-01 |\n```\n' > "$AUTOREKT_HOME/j.md"
 check "journal"                 "needs attention"     show "$AUTOREKT_HOME/j.md"
+check "journal changes"         "changes since"       show "$AUTOREKT_HOME/j.md" --changes --as smoke
+check "journal alerts"          "rules from"          watch "$AUTOREKT_HOME/j.md"
 check "journal ids"             "yahoo:QQQ"           show "@$AUTOREKT_HOME/j.md" --with last
 check "shares list"             "Smoke report"        show shares
 check "share remove"            "link removed"        show "$AUTOREKT_HOME/r.md" --share --ttl 0

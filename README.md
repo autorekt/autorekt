@@ -431,7 +431,7 @@ releases `watch --wait` for agents without hooks.
 <summary><code>autorekt watch 'pct(BTC, "1h") &lt; -1.5' --test</code></summary>
 
 ```
-$ autorekt watch 'pct(BTC, "1h") < -1.5' --test --tf 5m -r 14d --cooldown 6h
+$ autorekt watch 'pct(BTC, "1h") < -1.5' --test -i 5m -r 14d --cooldown 6h
 backtest adhoc  expr: pct(BTC, "1h") < -1.5  tf 5m  range 14d  for 0  cooldown 6h  ->  2 firing(s) over 4032 bars
 time                value  BTC +1h     +4h    +24h
 2026-10-29 20:40  -2.4493   +0.25%  -2.00%  -2.46%
@@ -502,7 +502,11 @@ placed) and ```` ```dates ````. `autorekt show journal.md` shows it with live ho
 gains, orders and dates, and lists first what needs attention: an order the price has reached,
 or a date this week. `--in CNY` converts values, `--at 2026-06-30` replays the trades up to a date,
 and `@this` in a show block stands for the journal's ids. Shared, a journal leaves out quantities
-and amounts unless you add `--show-amounts`.
+and amounts unless you add `--show-amounts`. `autorekt watch journal.md` turns its open orders and
+dates (and rules in a ```` ```watch ```` block) into alerts, `--changes` shows only what newly needs
+attention, and orders in an `account=sim` table (with optional stop and target, and an
+```` ```instruments ```` block for contract multipliers) fill and exit by themselves from daily bars,
+for paper trading.
 
 ## License
 

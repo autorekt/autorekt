@@ -41,6 +41,26 @@ fn is_currency(id: &str) -> bool {
     id.len() == 3 && id.chars().all(|c| c.is_ascii_uppercase())
 }
 
+/// The journal with the trades its `account=sim` orders made, from daily bars.
+pub async fn with_sim(j: &Journal) -> Result<Journal> {
+    let sim: Vec<&Row> = j.orders.iter().filter(|o| o.get("account").is_some_and(|a| a == "sim")).collect();
+    if sim.is_empty() {
+        return Ok(j.clone());
+    }
+    let mut bars = std::collections::BTreeMap::new();
+    for o in sim {
+        let id = o.get("id").context("a sim order has no id")?;
+        let placed = o.get("placed").map(|p| parse_time(p)).transpose()?.unwrap_or_else(|| now_ms() - 86_400_000);
+        if !bars.contains_key(id) {
+            bars.insert(id.clone(), providers::ohlcv(&ids::parse(id)?, Timeframe::D1, Range { start: Some(placed - 86_400_000), end: None, limit: 400 }).await?);
+        }
+    }
+    let mut out = j.clone();
+    out.trades.extend(journal::simulate(j, &bars));
+    out.trades.sort_by_key(|r| r.get("date").cloned().unwrap_or_default());
+    Ok(out)
+}
+
 pub async fn holdings(j: &Journal, at: Option<i64>) -> Result<(Vec<Live>, std::collections::BTreeMap<(String, String), f64>)> {
     let (hs, cash) = journal::book(j, at.unwrap_or(i64::MAX))?;
     let mut out = Vec::new();
@@ -67,7 +87,8 @@ pub async fn orders(j: &Journal) -> Result<Vec<OrderState>> {
         let iid = ids::parse(id)?;
         let bars = providers::ohlcv(&iid, Timeframe::D1, Range { start: Some(placed), end: None, limit: 400 }).await?;
         let sell = r.get("side").is_some_and(|s| s.eq_ignore_ascii_case("sell"));
-        let reached = bars.iter().find(|b| if sell { b.high >= limit } else { b.low <= limit }).map(|b| (b.timestamp, if sell { b.high } else { b.low }));
+        let expires = r.get("expires").map(|e| parse_time(e)).transpose()?.unwrap_or(i64::MAX);
+        let reached = bars.iter().filter(|b| b.timestamp <= expires).find(|b| if sell { b.high >= limit } else { b.low <= limit }).map(|b| (b.timestamp, if sell { b.high } else { b.low }));
         let last = providers::ticker(&iid).await.ok().map(|t| t.last);
         out.push(OrderState { row: r.clone(), last, reached });
     }
@@ -77,7 +98,7 @@ pub async fn orders(j: &Journal) -> Result<Vec<OrderState>> {
 /// What needs a look: reached or near orders, and dates from 3 days ago to a week ahead.
 pub fn attention(j: &Journal, os: &[OrderState]) -> Vec<String> {
     let mut out = Vec::new();
-    for o in os {
+    for o in os.iter().filter(|o| o.row.get("account").map_or(true, |a| a != "sim")) {
         let name = o.row.get("ref").or(o.row.get("id")).cloned().unwrap_or_default();
         let limit: f64 = o.row.get("limit").and_then(|v| v.parse().ok()).unwrap_or(f64::NAN);
         if let Some((t, p)) = o.reached {
@@ -100,11 +121,12 @@ pub fn attention(j: &Journal, os: &[OrderState]) -> Vec<String> {
 /// Tables for the data blocks: holdings (with cash), orders and dates. Without `amounts`,
 /// quantities, costs and values are left out (for pages others will see).
 pub async fn tables(j: &Journal, at: Option<i64>, in_ccy: Option<&str>, amounts: bool) -> Result<(Vec<Vec<String>>, Vec<Vec<String>>, Vec<Vec<String>>, Vec<String>)> {
+    let j = &with_sim(j).await?;
     let (hs, cash) = holdings(j, at).await?;
     let os = orders(j).await?;
     let mut values = Vec::new();
     for l in &hs {
-        let v = l.last.map(|p| p * l.h.qty).unwrap_or(f64::NAN);
+        let v = l.last.map(|p| p * l.h.qty * journal::multiplier(j, &l.h.id)).unwrap_or(f64::NAN);
         let shown = match in_ccy {
             Some(c) => convert(v, &l.h.ccy, c).await?,
             None => v,
@@ -151,7 +173,17 @@ pub async fn tables(j: &Journal, at: Option<i64>, in_ccy: Option<&str>, amounts:
         let g = |k: &str| s.row.get(k).cloned().unwrap_or_default();
         let limit: f64 = g("limit").parse().unwrap_or(f64::NAN);
         let dist = s.last.map(|l| format!("{:+.1}%", (limit / l - 1.0) * 100.0)).unwrap_or("-".into());
-        let status = if s.reached.is_some() { "reached" } else if s.last.is_some_and(|l| (l / limit - 1.0).abs() <= 0.01) { "near" } else { "open" };
+        let sim = s.row.get("account").is_some_and(|a| a == "sim");
+        let expired = s.row.get("expires").and_then(|e| parse_time(e).ok()).is_some_and(|e| e < now_ms());
+        let status = if s.reached.is_some() {
+            if sim { "filled (sim)" } else { "reached" }
+        } else if expired {
+            "expired"
+        } else if s.last.is_some_and(|l| (l / limit - 1.0).abs() <= 0.01) {
+            "near"
+        } else {
+            "open"
+        };
         o.push(vec![g("ref"), g("side"), g("id"), if amounts { g("qty") } else { "-".into() }, g("limit"), s.last.map(render::fmt_auto).unwrap_or("-".into()), dist, status.into()]);
     }
     let mut d = vec![["date", "what", "note"].map(String::from).to_vec()];
@@ -245,11 +277,82 @@ pub async fn share_markdown(md: &str, in_ccy: Option<&str>, amounts: bool) -> Re
     Ok(out.replace("```show\n```\n", ""))
 }
 
+/// `watch FILE.md`: the journal's alert rules, written to rules/journal-NAME.yaml (replacing the
+/// earlier ones): its watch blocks, for each open order a rule when the price comes within 1% of
+/// the limit and when it reaches it, and for each date one three days before and one on the day.
+pub fn rules(path: &str) -> Result<(std::path::PathBuf, usize)> {
+    let md = std::fs::read_to_string(path).with_context(|| format!("reading {path}"))?;
+    let j = journal::parse(&md)?;
+    let stem: String = std::path::Path::new(path).file_stem().and_then(|s| s.to_str()).unwrap_or("journal").chars().map(|c| if c.is_ascii_alphanumeric() { c.to_ascii_lowercase() } else { '_' }).collect();
+    let mut out: Vec<rules::Rule> = Vec::new();
+    if !j.watch.trim().is_empty() {
+        #[derive(serde::Deserialize)]
+        struct File {
+            rules: Vec<rules::Rule>,
+        }
+        let f: File = serde_yaml::from_str(&j.watch).context("the watch block is not a rules: [...] YAML list")?;
+        out.extend(f.rules.into_iter().map(|mut r| {
+            r.name = format!("{stem}.{}", r.name);
+            r
+        }));
+    }
+    for o in j.orders.iter().filter(|o| o.get("account").map_or(true, |a| a != "sim")) {
+        let (Some(id), Some(limit)) = (o.get("id"), o.get("limit")) else { continue };
+        let name = o.get("ref").cloned().unwrap_or_else(|| id.clone());
+        let sell = o.get("side").is_some_and(|s| s.eq_ignore_ascii_case("sell"));
+        let reach = if sell { format!("high(\"{id}\", \"1d\") >= {limit}") } else { format!("low(\"{id}\", \"1d\") <= {limit}") };
+        out.push(rules::Rule { name: format!("{stem}.{name}_near"), expr: Some(format!("abs(close(\"{id}\", \"1d\") / {limit} - 1) <= 0.01")), cooldown: Some("1d".into()), message: Some(format!("order {name}: {id} is within 1% of the limit {limit}")), ..Default::default() });
+        out.push(rules::Rule { name: format!("{stem}.{name}_reached"), expr: Some(reach), cooldown: Some("1d".into()), severity: Some(3), message: Some(format!("order {name}: {id} reached the limit {limit}; if it filled, record the trade")), ..Default::default() });
+    }
+    for d in &j.dates {
+        let Some(t) = d.get("date").and_then(|s| parse_time(s).ok()) else { continue };
+        let what = d.get("what").cloned().unwrap_or_default();
+        for (k, when) in [("soon", t - 3 * 86_400_000), ("today", t)] {
+            if when < now_ms() {
+                continue;
+            }
+            let dt = chrono::DateTime::from_timestamp_millis(when).unwrap_or_default();
+            let slug: String = what.chars().filter(|c| c.is_ascii_alphanumeric()).take(20).collect::<String>().to_lowercase();
+            out.push(rules::Rule { name: format!("{stem}.{}_{slug}_{k}", d.get("date").unwrap()), schedule: Some(format!("0 1 {} {} *", chrono::Datelike::day(&dt), chrono::Datelike::month(&dt))), message: Some(format!("{}: {what}", d.get("date").unwrap())), ..Default::default() });
+        }
+    }
+    for r in &out {
+        r.validate().with_context(|| format!("rule {}", r.name))?;
+    }
+    let file = rules::dir().join(format!("journal-{stem}.yaml"));
+    std::fs::create_dir_all(rules::dir())?;
+    #[derive(serde::Serialize)]
+    struct File<'a> {
+        rules: &'a [rules::Rule],
+    }
+    std::fs::write(&file, serde_yaml::to_string(&File { rules: &out })?)?;
+    Ok((file, out.len()))
+}
+
 /// The journal as text: what needs attention, then the document with live tables.
 pub async fn show(path: &str, md: &str, a: &ShowArgs, g: &Global, o: &Opts) -> Result<()> {
     let j = journal::parse(md).with_context(|| format!("reading {path}"))?;
     let at = a.at.as_deref().map(parse_time).transpose()?;
     let (h, ord, d, att) = tables(&j, at, a.in_ccy.as_deref(), true).await?;
+    if a.changes {
+        // Only what needs attention and was not shown to this agent before.
+        let c = store::open()?;
+        let key = format!("journal:{}", std::fs::canonicalize(path)?.display());
+        let seen: Vec<String> = store::get_cursor(&c, &a.agent, &key)?.and_then(|s| serde_json::from_str(&s).ok()).unwrap_or_default();
+        let new: Vec<&String> = att.iter().filter(|x| !seen.contains(x)).collect();
+        store::set_cursor(&c, &a.agent, &key, &serde_json::to_string(&att)?)?;
+        if g.json {
+            return print_json(&new);
+        }
+        println!("journal {path}  changes since {} last looked", a.agent);
+        if new.is_empty() {
+            println!("nothing new needs attention");
+        }
+        for x in new {
+            println!("  - {x}");
+        }
+        return Ok(());
+    }
     if g.json {
         return print_json(&json!({"attention": att, "holdings": h, "orders": ord, "dates": d}));
     }
@@ -299,6 +402,10 @@ pub async fn show(path: &str, md: &str, a: &ShowArgs, g: &Global, o: &Opts) -> R
             continue;
         }
         println!("{line}");
+    }
+    if !holdings_shown && h.len() > 1 {
+        println!("\nholdings and cash (from trades the sim orders made):");
+        print!("{}", render::table(&h));
     }
     Ok(())
 }

@@ -100,7 +100,7 @@ Examples:
   autorekt watch                                              list rules and monitors
   autorekt watch btc_dump --expr 'pct(BTC, \"1h\") < -3' --hook 'notify.sh'
   autorekt watch btc_80k --expr 'BTC > 80000' --cooldown 6h
-  autorekt watch vix_inv --expr 'VIX - VIX3M > 1.5' --tf 15m --for 30m
+  autorekt watch vix_inv --expr 'VIX - VIX3M > 1.5' -i 15m --for 30m
   autorekt watch hourly --every 1h --hook '...'
   autorekt watch us_open --cron '30 13 * * 1-5' --hook '...'
   autorekt watch macro --calendar 15m --countries USD,EUR --hook '...'
@@ -108,9 +108,10 @@ Examples:
   autorekt watch btc_dump --test                               evaluate now
   autorekt watch --wait --timeout 1h                           block until something fires
   autorekt watch basis --python                                create a Python monitor
+  autorekt watch journal.md                                    a journal's rules, order and date alerts
   autorekt watch btc_dump --rm
 
-Expressions: ids are closes at --tf; close/open/high/low/volume(id, tf), funding_rate(id),
+Expressions: ids are closes at -i; close/open/high/low/volume(id, tf), funding_rate(id),
 open_interest(id), prob(id, outcome), pct(id, \"1h\"), stale(id, \"2h\"), atr(id, tf, n),
 ta.sma ema rma wma rsi stdev highest lowest sum zscore change roc crossover crossunder cross
 rising falling, abs min max sqrt log nz hour dayofweek, + - * / > < >= <= == != and or not.
@@ -317,8 +318,8 @@ pub struct WatchArgs {
     /// Calendar currencies, e.g. USD,EUR.
     #[arg(long)]
     pub countries: Option<String>,
-    /// Timeframe for ids in the expression (default 1m).
-    #[arg(long)]
+    /// Timeframe of bars for ids in the expression (default 1m).
+    #[arg(short = 'i', long = "interval")]
     pub tf: Option<String>,
     /// The condition must hold this long before firing.
     #[arg(long = "for")]
