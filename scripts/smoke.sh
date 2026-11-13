@@ -79,6 +79,7 @@ check "dividend adjusted"       "adj_close"           show yahoo:SPY --adjust -r
 check "beta against benchmark"  "beta()"              show yahoo:QQQ yahoo:IWM --vs yahoo:SPY --with 'beta(),upcap()' -r 1y
 check "eastmoney quote"         "summary"             show eastmoney:1.600519 -i 1d -n 5
 check "eastmoney board set"     "flow(5d)"            show cn.industry --top 3
+check "fundamentals"            "pb"                  show yahoo:0788.HK yahoo:600519.SS --with 'pe,pb'
 check "ids from a file"         "QQQ"                 show "@$AUTOREKT_HOME/list.txt"
 "$BIN" daemon stop >/dev/null 2>&1
 rm -rf "$AUTOREKT_HOME"

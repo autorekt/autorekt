@@ -84,7 +84,7 @@ impl Provider for Yahoo {
         "Yahoo Finance: indices, stocks, ETFs, futures, FX, yields (unofficial; may be delayed)"
     }
     fn metrics(&self) -> &'static [&'static str] {
-        &["adj_close"]
+        &["adj_close", "pe", "pb", "dy", "dps", "payout", "mcap", "eps", "bvps", "roe", "debt_ratio", "rev_yoy", "np_yoy"]
     }
     fn notes(&self, symbol: &str) -> Vec<String> {
         if symbol.ends_with("=F") || symbol.starts_with('^') {
@@ -169,9 +169,11 @@ impl Provider for Yahoo {
     }
 
     /// `adj_close`: daily (or longer) closes adjusted for dividends and splits, i.e. total return.
+    /// Anything else is a company fundamental (see fundamentals.rs).
     async fn fetch_metric(&self, symbol: &str, metric: &str, tf: Timeframe, range: Range) -> Result<Vec<MetricPoint>> {
         if metric != "adj_close" {
-            bail!("yahoo: metric '{metric}' not supported for {symbol} (supported: adj_close)");
+            let price = async { Ok(self.fetch_ticker(symbol).await?.last) };
+            return Ok(finish_metric(crate::fundamentals::fetch(symbol, metric, range.start_ms(tf), price).await?, range));
         }
         if tf.secs < 86400 {
             bail!("yahoo: adj_close is daily or longer (use -i 1d, 1w or 1M)");

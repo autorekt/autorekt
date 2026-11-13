@@ -51,6 +51,8 @@ Examples:
   autorekt show SPY QQQ IWM --from 2026-11-06 --to 2026-11-12
   autorekt show megacaps --with '+chg(ytd)'
   autorekt show cn.industry --sort 'flow(5d)' --top 10 --bottom 10
+  autorekt show hk.southbound --with 'last,pe,pb,dy,mcap' --where 'dy > 6 and pb < 0.8' --sort dy
+  autorekt show 600519.SS#pe -i 1d -r 5y                   a fundamental's history (A-shares)
   autorekt show eastmoney:90.BK0475 -i 1d                   an A-share board (eastmoney market.code ids)
   autorekt show sectors --with 'chg(5d),chg(ytd)' --sort 'chg(5d)' --top 3 --bottom 3
   autorekt show @watchlist.txt --where 'from_high(52w) < -20' --sort '-chg(ytd)'
@@ -127,6 +129,7 @@ config.yaml keys:
   default_hook: 'command'        hook for monitor alerts without their own
   hook_chart_url: true           pass AUTOREKT_CHART_URL to hooks
   share_base_url / share_port / share_no_tunnel                 serving shared charts
+  sec_contact: 'Name you@example.com'                          sent to the SEC for US fundamentals (it requires one)
   share_tunnel_token_file: ~/.autorekt/tunnel.token             run a Cloudflare named tunnel (with share_base_url, share_port)";
 
 #[derive(Parser)]
@@ -237,7 +240,8 @@ pub struct ShowArgs {
     pub news: bool,
     /// A column: an expression where $ is the series ('ta.rsi($,14)'), or a table column
     /// (last, chg(5d), chg(ytd), chg(2024-09-13..2024-10-07), high(52w), low(52w), from_high(52w),
-    /// from_low(52w), dd(5y), vol(20d), vol_ratio(20); against a benchmark over -r at -i: beta(SPY),
+    /// from_low(52w), dd(5y), vol(20d), vol_ratio(20), flow(5d) (Eastmoney ids); company figures: pe, pb,
+    /// dy, dps, payout, mcap, eps, bvps, roe, debt_ratio, rev_yoy, np_yoy; against a benchmark over -r at -i: beta(SPY),
     /// corr(SPY), upcap(SPY), downcap(SPY)). Several ids or a board make a table with
     /// these columns; a leading + adds them to the board's own.
     #[arg(long)]

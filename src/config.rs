@@ -32,6 +32,8 @@ pub struct Config {
     /// Create a shared chart for each rule firing and pass it to hooks as AUTOREKT_CHART_URL.
     #[serde(default)]
     pub hook_chart_url: bool,
+    /// Contact details sent to the SEC with each request for US fundamentals (it requires them).
+    pub sec_contact: Option<String>,
     /// Hook run for monitor alerts that do not name their own hook.
     pub default_hook: Option<String>,
     /// Series the daemon samples periodically (for metrics with no public history).

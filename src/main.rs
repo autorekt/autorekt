@@ -7,6 +7,7 @@ mod config;
 mod daemon;
 mod expr;
 mod freshness;
+mod fundamentals;
 mod http;
 mod ids;
 mod model;

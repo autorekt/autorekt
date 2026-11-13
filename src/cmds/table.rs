@@ -156,6 +156,15 @@ async fn daily(id: &str, start: i64, end: Option<i64>) -> Result<Vec<Bar>> {
     providers::ohlcv(&ids::parse(id)?, Timeframe::D1, r).await
 }
 
+/// The latest value of a fundamental of `id`.
+async fn fundamental(id: &str, metric: &str) -> Result<Option<f64>> {
+    if expr::is_expression(id) {
+        bail!("{metric} is a company figure; '{id}' is an expression");
+    }
+    let mid = ids::parse(&format!("{}#{metric}", ids::parse(id)?))?;
+    Ok(providers::ohlcv(&mid, Timeframe::D1, Range::last(5)).await?.last().map(|b| b.close))
+}
+
 /// The latest value of an expression column for `id`.
 async fn expr_value(spec: &str, id: &str, tf: Timeframe, end: Option<i64>) -> Result<Option<f64>> {
     let me = if expr::is_expression(id) { format!("({id})") } else { format!("\"{id}\"") };
@@ -188,7 +197,7 @@ async fn row(item: &str, cols: &[Column], ctx: &Ctx) -> (String, Result<Vec<Opti
     let e = ctx.end.unwrap_or_else(now_ms);
     let stats = cols.iter().any(|c| c.bench().is_some());
     let start = cols.iter().map(|c| c.reach(e)).chain(ctx.span.map(|(a, _)| a - 10 * 86_400_000)).chain(stats.then_some(ctx.stats_from)).min().unwrap_or(e);
-    let needs_bars = cols.iter().any(|c| !matches!(c.func, Func::Expr(_)));
+    let needs_bars = cols.iter().any(|c| !matches!(c.func, Func::Expr(_) | Func::Metric(_)));
     let source = if ctx.adjust && needs_bars {
         match adjusted(&id) {
             Ok(a) => a,
@@ -229,6 +238,10 @@ async fn row(item: &str, cols: &[Column], ctx: &Ctx) -> (String, Result<Vec<Opti
                 ctx.benches.get(c.bench().unwrap()).and_then(|b| c.eval_vs(&own, b, tf.ms()))
             }
             Func::Flow(_) => bars.last().and_then(|b| c.eval_flow(&flows, b.timestamp, span)),
+            Func::Metric(m) => match fundamental(&id, m).await {
+                Ok(v) => v,
+                Err(err) => return (label, Err(err.context(c.label.clone()))),
+            },
             _ => c.eval(&bars, span),
         });
     }
