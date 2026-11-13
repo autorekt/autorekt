@@ -1,6 +1,6 @@
 [package]
 name = "autorekt"
-version = "0.2.0"
+version = "0.3.0"
 edition = "2021"
 description = "Market observation for agents: quotes, candles, positioning, odds, news and watch rules — as a CLI any agent can use."
 license = "MIT"
