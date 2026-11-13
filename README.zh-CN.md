@@ -444,6 +444,17 @@ nyfed:SOFR - fred:IORB -i 1d -r 90d
 
 链接在重启后仍然有效。再次分享同一个文件会更新同一个链接；`--name` 另开一个链接，`--ttl 30d` 设定有效期，`--ttl 0` 删除链接。`autorekt show shares` 列出所有有效链接及其访问次数和到期时间。
 
+隧道作为独立进程运行，所以守护进程重启时随机的 `trycloudflare.com` 地址保持不变（机器重启后会变）。如果需要永不改变的地址，在 Cloudflare 上为你域名下的一个主机名创建命名隧道，指向 `http://localhost:8765`，把 token 存进一个文件，然后设置：
+
+```text
+# ~/.autorekt/config.yaml
+share_port: 8765
+share_base_url: https://charts.example.com
+share_tunnel_token_file: ~/.autorekt/tunnel.token
+```
+
+`autorekt daemon tunnel` 显示隧道状态；`autorekt daemon tunnel stop` 停止隧道。
+
 ## 许可证
 
 MIT
