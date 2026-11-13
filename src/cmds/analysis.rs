@@ -1,20 +1,22 @@
-//! `why`: explain. One id: locate a move, measure what else moved in the same window as
-//! z-scores, and collect dated news. Several ids (or none): the correlation matrix of returns
-//! and the pairs that recently broke from their usual relationship.
+//! `show --view explain` locates a move of one id, measures what else moved in the same window
+//! as z-scores, and collects dated news. `show --view corr` gives the correlation matrix of
+//! returns of several ids (or the main cross-asset set) and the pairs that recently broke from
+//! their usual relationship.
 
 use super::*;
-use crate::cli::WhyArgs;
+use crate::cli::ShowArgs;
 use serde::Serialize;
 
-pub async fn why(a: WhyArgs, g: &Global, o: &Opts) -> Result<()> {
-    if a.ids.len() == 1 {
-        let tf = a.interval.unwrap_or_else(|| "1h".into());
-        let range = a.range.unwrap_or_else(|| "7d".into());
-        return explain_move(&a.ids[0], a.at, &a.window, &range, &tf, g, o).await;
-    }
-    let tf = Timeframe::parse(&a.interval.unwrap_or_else(|| "1d".into()))?;
-    let secs = parse_duration(&a.range.unwrap_or_else(|| "60d".into()))?;
-    corr(a.ids, &tf.to_string(), ((secs / tf.secs) as usize).max(10), g, o).await
+pub async fn explain(id: &str, a: &ShowArgs, g: &Global, o: &Opts) -> Result<()> {
+    let tf = a.interval.clone().unwrap_or_else(|| "1h".into());
+    let range = a.range.clone().unwrap_or_else(|| "7d".into());
+    explain_move(id, a.at.clone(), &a.window, &range, &tf, g, o).await
+}
+
+pub async fn correlations(ids: Vec<String>, a: &ShowArgs, g: &Global, o: &Opts) -> Result<()> {
+    let tf = Timeframe::parse(a.interval.as_deref().unwrap_or("1d"))?;
+    let secs = parse_duration(a.range.as_deref().unwrap_or("60d"))?;
+    corr(ids, &tf.to_string(), ((secs / tf.secs) as usize).max(10), g, o).await
 }
 
 async fn corr(list: Vec<String>, interval: &str, limit: usize, g: &Global, o: &Opts) -> Result<()> {
@@ -251,7 +253,7 @@ async fn explain_move(input: &str, at: Option<String>, window: &str, lookback: &
         }));
     }
     println!(
-        "why {}  window {} .. {} {}  move {}",
+        "explain {}  window {} .. {} {}  move {}",
         label,
         o.full_time(w0),
         o.full_time(w1),

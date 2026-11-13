@@ -70,9 +70,12 @@ check "table span"              "chg"                 show yahoo:SPY yahoo:QQQ -
 check "board plus column"       "chg(ytd)"            show megacaps --with '+chg(ytd)'
 check "shares list"             "Smoke report"        show shares
 check "share remove"            "link removed"        show "$AUTOREKT_HOME/r.md" --share --ttl 0
-check "why move"                "what else moved"     why BTC -r 2d
-check "why correlations"        "correlation"         why BTC ETH -r 30d
-check "why breaks"              "breaks:"             why BTC ETH GOLD -r 60d
+check "explain move"            "what else moved"     show BTC --view explain -r 2d
+check "correlations"            "correlation"         show BTC ETH --view corr -r 30d
+check "correlation breaks"      "breaks:"             show BTC ETH GOLD --view corr -r 60d
+check "table where and sort"    "of 16 rows"          show sectors --where 'chg(ytd) > -100' --sort 'chg(5d)' --top 3
+printf 'SPY\n# comment\nQQQ\n' > "$AUTOREKT_HOME/list.txt"
+check "ids from a file"         "QQQ"                 show "@$AUTOREKT_HOME/list.txt"
 "$BIN" daemon stop >/dev/null 2>&1
 rm -rf "$AUTOREKT_HOME"
 echo "passed $pass, network problems $net, failed $fail"
