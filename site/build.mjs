@@ -44,7 +44,7 @@ marked.use({
     code({ text, lang }) {
       if (text.startsWith("$ ")) return figure(text.split("\n")[0].slice(2), text.split("\n").map(paint).join("\n"));
       if (lang === "text" || lang === "sh") return `<div class="copybox"><pre>${esc(text)}</pre><button type="button" data-copy>${strings.copy}</button></div>`;
-      if (lang === "markdown") return figure("report.md", text.split("\n").map((l) => (l.startsWith("## ") ? `<span class="h">${esc(l)}</span>` : cells(esc(l)))).join("\n"));
+      if (lang === "markdown") return figure(/```(trades|orders|positions)/.test(text) ? "journal.md" : "report.md", text.split("\n").map((l) => (l.startsWith("## ") ? `<span class="h">${esc(l)}</span>` : cells(esc(l)))).join("\n"));
       throw new Error(`README: no rendering for a code block in '${lang}'`);
     },
     html({ text }) {

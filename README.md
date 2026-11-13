@@ -163,48 +163,23 @@ Give your agent this prompt:
 
 ```text
 Install autorekt (https://autorekt.com, source at https://github.com/autorekt/autorekt).
-1. Install the prebuilt binary: on Linux or macOS run `curl -fsSL https://autorekt.com/install.sh | sh`;
-   on Windows run `irm https://autorekt.com/install.ps1 | iex` in PowerShell, or
-   `curl -fsSL https://autorekt.com/install.cmd -o install.cmd && install.cmd && del install.cmd` in CMD.
-2. If that fails, build from source: clone the repository, run `cargo build --release` and put the
-   binary on PATH. Use the Rust toolchain already on this machine if it is new enough. Install a
-   missing or outdated Rust toolchain, C compiler or other build dependency the way a person would
-   on this system, with the official installer or the system package manager (for example rustup
-   from https://rustup.rs, build-essential, the Xcode command line tools, Visual Studio Build Tools).
-3. Debug any problem until everything works, changing the code if you must, and tell me what you
-   changed.
+1. Install the prebuilt binary: on Linux or macOS run `curl -fsSL https://autorekt.com/install.sh | sh`; on Windows run `irm https://autorekt.com/install.ps1 | iex` in PowerShell, or `curl -fsSL https://autorekt.com/install.cmd -o install.cmd && install.cmd && del install.cmd` in CMD.
+2. If that fails, build from source: clone the repository, run `cargo build --release` and put the binary on PATH. Use the Rust toolchain already on this machine if it is new enough. Install a missing or outdated Rust toolchain, C compiler or other build dependency the way a person would on this system, with the official installer or the system package manager (for example rustup from https://rustup.rs, build-essential, the Xcode command line tools, Visual Studio Build Tools).
+3. Debug any problem until everything works, changing the code if you must, and tell me what you changed.
 4. Check it works with `autorekt show`, then learn the commands from `autorekt --help`.
 ```
 
-Once installed, autorekt runs entirely on your machine and never contacts a server of ours: no
-account, no telemetry, nothing is ever sent to us. It fetches data straight from the public
-sources themselves (exchanges, central banks, statistics offices, news feeds), and opens a
-Cloudflare tunnel only when you share a chart. Every address it contacts is written out in the
-source, so this is easy to verify; the second prompt below has your agent verify it.
-
-If you care a lot about security, use this one instead: your agent audits the whole repository,
-tells you the risks, and only then builds from the audited source. Installing becomes slow and
-uses many tokens.
+- **Nothing leaves your machine** No account, no API keys, no telemetry. Data comes straight from the public sources, and a Cloudflare tunnel opens only when you share a page.
+- **Easy to check** Every address autorekt contacts is written out in the source.
+- **Audit first, if you like** The prompt below has your agent read the whole repository and report every risk before it builds. Slower, and it uses many tokens.
 
 ```text
-Before installing autorekt, audit it. Clone https://github.com/autorekt/autorekt and read the whole
-repository: the Rust source, build scripts, the dependencies in Cargo.toml and Cargo.lock, the
-install scripts in site/install/ and the GitHub workflows. Find everything risky: which network
-addresses it contacts and what it sends; which files it reads or writes outside its own directory
-(~/.autorekt); which commands it runs (hooks, monitors, the downloaded cloudflared); what the local
-HTTP server exposes; the public tunnel; and dependencies that are unusual or unmaintained. Check in
-particular the claim that it never contacts a server run by its authors. Report
-each risk to me with its file and line, how serious it is and whether it can be turned off, then
-wait for my go-ahead. Then build from the audited source with `cargo build --release` (installing a
-Rust toolchain the usual way if needed), put the binary on PATH, and check it with `autorekt show`.
+Before installing autorekt, audit it. Clone https://github.com/autorekt/autorekt and read the whole repository: the Rust source, build scripts, the dependencies in Cargo.toml and Cargo.lock, the install scripts in site/install/ and the GitHub workflows. Find everything risky: which network addresses it contacts and what it sends; which files it reads or writes outside its own directory (~/.autorekt); which commands it runs (hooks, monitors, the downloaded cloudflared); what the local HTTP server exposes; the public tunnel; and dependencies that are unusual or unmaintained. Check in particular the claim that it never contacts a server run by its authors. Report each risk to me with its file and line, how serious it is and whether it can be turned off, then wait for my go-ahead. Then build from the audited source with `cargo build --release` (installing a Rust toolchain the usual way if needed), put the binary on PATH, and check it with `autorekt show`.
 ```
 
 Agents that load skills, such as Claude Code, can also take
 [skills/autorekt/SKILL.md](https://github.com/autorekt/autorekt/blob/main/skills/autorekt/SKILL.md), which tells
-them when and how to reach for autorekt.
-
-autorekt observes; it never trades. It works with any agent that can run a shell command. Free
-data only, fetched from public endpoints on your own machine: no accounts, no API keys.
+them when and how to reach for autorekt. autorekt observes; it never trades.
 
 ## The bottleneck is data, not intelligence
 
@@ -446,9 +421,27 @@ time                value  BTC +1h     +4h    +24h
 Agents learn a tool by imitating how it was used before, so the interface stays small: one verb
 per job, the same options everywhere, and help and error messages that say what to do next.
 
-- **`show`** Read anything: the briefing, boards, charts, a metric, odds, news, the calendar, your alerts, or a markdown report. `autorekt show liquidity`. `--view explain` finds a move, what moved with it and the news (`autorekt show BTC --view explain`); `--view corr` measures how assets move together. `--with` picks the columns of a table (`autorekt show sectors --with 'chg(5d),chg(ytd),from_high(52w)'`), `--from`/`--to` set an explicit span, `--csv` gives every bar of each series (`autorekt show SPY QQQ -i 1d -r 1y --csv`) and `--md` prints tables as Markdown. `--where`, `--sort`, `--top` and `--bottom` filter and order a table; `@watchlist.txt` reads ids from a file. Company figures are columns too: `autorekt show hk.southbound --with 'pe,pb,dy' --where 'dy > 6 and pb < 0.8'` (Hong Kong and A-shares from Eastmoney, US from SEC filings). `autorekt show news 0788.HK` lists a stock's exchange filings and headlines; `autorekt show calendar NVDA AAPL` its coming earnings and dividends. The `lists` column flags stocks on US restriction lists (OFAC NS-CMIC by ticker, the Department of Defense 1260H list by name; parents and affiliates are not checked). `--adjust` uses prices that include dividends, and `--vs` sets the benchmark for `beta()`, `corr()`, `upcap()` and `downcap()` (`autorekt show 0788.HK 2601.HK --vs 3033.HK --with 'beta(),upcap(),downcap()' -i 1M -r 5y --adjust`).
+- **`show`** Read anything: the briefing, boards, charts, tables, a journal, odds, news, the calendar, your alerts. `autorekt show liquidity`
 - **`search`** Find anything: instrument ids across every source, prediction markets, headlines. `autorekt search swap --kind instruments`
 - **`watch`** Get woken: rules in plain expressions, backtested before they are trusted, run by a background daemon. `autorekt watch --wait`
+
+## Any table in one line
+
+Several ids, a board or a list make a table. Options pick its columns, keep the rows you want and
+put them in order.
+
+- **Columns** Change over any window or between two dates, distance from the high, drawdown, volatility. `autorekt show sectors --with 'chg(5d),dd(1y)'`
+- **Filter and sort** Keep the rows that pass, order them, take the top and the bottom. `autorekt show sectors --where 'chg(ytd) > 15' --sort 'chg(5d)' --top 5`
+- **Company figures** P/E, P/B, dividend yield, payout and growth for Hong Kong, A-shares and the US. `autorekt show hk.southbound --with 'pe,pb,dy' --where 'dy > 6'`
+- **Against a benchmark** Beta, correlation and upside and downside capture, dividends included. `autorekt show 0788.HK 2601.HK --vs 3033.HK --with 'beta(),upcap(),downcap()' -i 1M -r 5y --adjust`
+- **China's boards and flows** Every A-share industry or concept board with its fund flows. `autorekt show cn.industry --sort 'flow(5d)' --top 10`
+- **Restriction lists** Whether a stock is on OFAC's NS-CMIC list or the Pentagon's 1260H list. `autorekt show 9988.HK 0788.HK --with lists`
+- **Filings and dates** A stock's exchange filings and headlines, or its next earnings and dividends. `autorekt show calendar NVDA AAPL`
+- **Why it moved** The biggest move, what moved with it, and the news; or how assets correlate. `autorekt show BTC --view explain`
+- **Your own lists** Ids from a file, one per line, anywhere an id goes. `autorekt show @watchlist.txt --with 'chg(5d),dy'`
+- **Export** Every bar of each series as CSV, or any table as Markdown. `autorekt show SPY QQQ -i 1d -r 1y --csv`
+- **Any span** A start and an end date, for a chart or for the change a table shows. `autorekt show SPY QQQ --from 2026-11-06 --to 2026-11-12`
+- **Total return** Prices with dividends added back, in charts, tables and CSV. `autorekt show 0788.HK -i 1w -r 5y --adjust`
 
 ## Every free source worth reading
 
@@ -457,9 +450,11 @@ autorekt says so instead of quietly showing something else.
 
 - **Crypto** OKX, Binance, Hyperliquid (including 24/7 equity perps), Deribit options and DVOL, Coinbase, DefiLlama stablecoins, spot ETF flows from Farside
 - **Markets** Yahoo Finance for stocks, ETFs, indices, futures, FX and commodities; Cboe option chains for dealer gamma, skew, put/call and same-day expiries
-- **Rates and dollar liquidity** FRED; the New York Fed for the SOFR distribution, repo facility use and primary dealer positions; the US Treasury for the daily cash balance and auctions; SOFR swap rates from publicly reported swap trades (DTCC); the ECB; Japan's Ministry of Finance
+- **Dollar liquidity** The New York Fed for the SOFR distribution, repo facility use and dealer positions; the Treasury's daily cash balance and auctions; SOFR swap rates from reported trades (DTCC)
+- **Rates** FRED, the ECB, Japan's Ministry of Finance
 - **Positioning** CFTC Commitments of Traders, FINRA off-exchange short volume, funding rates, open interest, long/short ratios and liquidations
-- **China and Hong Kong** Yuan central parity fixings and SHIBOR (CFETS); government bond yields, margin debt, Stock Connect flows and breadth, A-share and Hong Kong quotes, industry and concept boards with fund flows (Eastmoney, `autorekt show cn.industry --sort 'flow(5d)' --top 10`); HIBOR and the aggregate balance (HKMA)
+- **China and Hong Kong** Yuan fixings and SHIBOR (CFETS); bond yields, margin debt, Stock Connect flows, quotes, boards and fund flows (Eastmoney); HIBOR (HKMA)
+- **Companies** Fundamentals and filings (Eastmoney, HKEXnews, SEC EDGAR), earnings and dividend dates (Nasdaq), US restriction lists (OFAC, the Federal Register)
 - **Odds, news and the calendar** Polymarket, Kalshi, financial and crypto news feeds, Google News search, the ForexFactory calendar, CNN and crypto Fear & Greed
 
 ## Share what it found
@@ -479,34 +474,37 @@ nyfed:SOFR - fred:IORB -i 1d -r 90d
 ```
 ````
 
-Links survive restarts. Sharing the same file again updates the same link; `--name` makes a
-separate one, `--ttl 30d` sets how long it lives and `--ttl 0` removes it. `autorekt show shares`
-lists every live link with its views and expiry.
+- **Links that last** Links survive restarts, and sharing the same file again updates the same link. `autorekt show shares`
+- **Expire or remove** `--ttl 30d` sets how long a link lives; `--ttl 0` removes it. `autorekt show report.md --share --ttl 0`
+- **A fixed address** The tunnel keeps its address while the daemon restarts; a Cloudflare named tunnel keeps one for good (`autorekt daemon --help`). `autorekt daemon tunnel`
 
-The tunnel runs on its own, so a daemon restart keeps its random `trycloudflare.com` address (a
-reboot does not). For an address that never changes, create a Cloudflare named tunnel for a
-hostname on your domain that points at `http://localhost:8765`, save its token in a file, and set:
+## Keep a journal
 
-```text
-# ~/.autorekt/config.yaml
-share_port: 8765
-share_base_url: https://charts.example.com
-share_tunnel_token_file: ~/.autorekt/tunnel.token
+A journal is a markdown document that keeps your records in pipe tables, next to your notes.
+autorekt reads it and shows it live.
+
+````markdown
+## Hong Kong dividends
+
+```trades account=company
+| date       | action | id      | qty | price | ccy | fee |
+| 2026-11-12 | buy    | 0788.HK | 500 | 9.05  | HKD | 27  |
 ```
 
-`autorekt daemon tunnel` shows the tunnel; `autorekt daemon tunnel stop` ends it.
+```orders account=company
+| ref     | side | id      | qty | limit | placed     |
+| tower-2 | buy  | 0788.HK | 500 | 8.60  | 2026-11-11 |
+```
 
-A journal is a markdown document that also keeps your records in pipe tables: ```` ```trades ````
-(date action id qty price ccy fee), ```` ```positions ````, ```` ```orders ```` (ref side id qty limit
-placed) and ```` ```dates ````. `autorekt show journal.md` shows it with live holdings, cash,
-gains, orders and dates, and lists first what needs attention: an order the price has reached,
-or a date this week. `--in CNY` converts values, `--at 2026-06-30` replays the trades up to a date,
-and `@this` in a show block stands for the journal's ids. Shared, a journal leaves out quantities
-and amounts unless you add `--show-amounts`. `autorekt watch journal.md` turns its open orders and
-dates (and rules in a ```` ```watch ```` block) into alerts, `--changes` shows only what newly needs
-attention, and orders in an `account=sim` table (with optional stop and target, and an
-```` ```instruments ```` block for contract multipliers) fill and exit by themselves from daily bars,
-for paper trading.
+```show
+@this --with 'chg(5d),dy,lists'
+```
+````
+
+- **Live holdings** Costs, cash, gains and weights follow from the trades, in one currency with `--in`, or as of any day with `--at`. `autorekt show journal.md --in CNY`
+- **What needs attention** Reached orders and this week's dates come first; `--changes` shows only what is new, and `watch` turns them into alerts. `autorekt show journal.md --changes`
+- **Paper trading** Orders in an `account=sim` table fill, stop and take profit from daily bars. `autorekt show sim.md`
+- **Private when shared** A shared journal leaves out quantities and amounts unless you add `--show-amounts`. `autorekt show journal.md --share`
 
 ## License
 
