@@ -34,7 +34,7 @@ const SHOW_HELP: &str = "WHAT is one of:
   shares           links made with --share: what, views, expiry, URL
   ID               one series: text candles (or sparkline + table for single-value series),
                    then compressed earlier history, swings, levels, state, events and data checks
-  ID ID ...        one row per id: last, changes, trend, flags
+  ID ID ...        one row per id: last, changes, trend, flags (with --csv: every bar of each)
   FILE.md          a markdown report; each line of a ```chart block is a chart in show syntax
                    (several lines = one chart with tabs). Prints a text preview; --share publishes
                    it as a page with live interactive charts.
@@ -47,6 +47,8 @@ Examples:
   autorekt show 'fred:SOFR - fred:IORB' -i 1d -r 90d
   autorekt show NQ -i 15m --at 2026-10-30T20:00:00Z
   autorekt show BTC ETH 'RSP / SPY' --changes
+  autorekt show SPY QQQ GLD -i 1d -r 1y --csv > prices.csv
+  autorekt show sectors --md
   autorekt show BTC -i 15m --share
   autorekt show report.md --share            (again: updates the same link)
   autorekt show report.md --share --ttl 0    (removes it)
@@ -137,9 +139,12 @@ pub struct Global {
     /// Output JSON instead of text.
     #[arg(long, global = true)]
     pub json: bool,
-    /// Output CSV (single series).
+    /// Output CSV: one row per bar of each series (id, date, timestamp, OHLCV, --with columns).
     #[arg(long, global = true)]
     pub csv: bool,
+    /// Print tables as Markdown.
+    #[arg(long, global = true)]
+    pub md: bool,
     /// Time zone for display (IANA name, or UTC/ET/HK/CN/tokyo).
     #[arg(long, global = true, env = "AUTOREKT_TZ", default_value = "UTC")]
     tz: String,
@@ -392,6 +397,7 @@ pub async fn run() -> i32 {
             Err(e) => eprintln!("warning: could not start the daemon: {e:#}"),
         }
     }
+    render::set_markdown(cli.g.md);
     let result = match opts(&cli.g) {
         Ok(o) => match cli.cmd {
             Cmd::Show(a) => cmds::show(a, &cli.g, &o).await,

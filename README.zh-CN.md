@@ -411,7 +411,7 @@ time                value  BTC +1h     +4h    +24h
 
 agent 学用一个工具，靠的是模仿它以前被怎么用。所以接口尽量小：一件事一个动词，所有命令的选项含义一致，帮助和错误信息会告诉你下一步该做什么。
 
-- **`show`** 查看一切：简报、看板、K 线、某项指标、赔率、新闻、日历、你的提醒，或者一份 markdown 报告。`autorekt show liquidity`
+- **`show`** 查看一切：简报、看板、K 线、某项指标、赔率、新闻、日历、你的提醒，或者一份 markdown 报告。`autorekt show liquidity`。`--csv` 输出每个序列的每一根 K 线（`autorekt show SPY QQQ -i 1d -r 1y --csv`），`--md` 把表格输出为 Markdown。
 - **`search`** 查找一切：所有来源的品种代码、预测市场、新闻标题。`autorekt search swap --kind instruments`
 - **`why`** 解释波动：找到它，衡量同一窗口里还有什么在动，找出带时间的新闻。给多个代码时：相关性和失效的关系。`autorekt why BTC`
 - **`watch`** 被叫醒：用普通表达式写规则，先回测再信任，由后台守护进程运行。`autorekt watch --wait`

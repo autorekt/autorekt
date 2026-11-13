@@ -88,10 +88,7 @@ pub async fn chart(s: &Series, g: &Global, o: &Opts) -> Result<()> {
         return print_json(&bars);
     }
     if g.csv {
-        println!("timestamp,open,high,low,close,volume");
-        for b in &bars {
-            println!("{},{},{},{},{},{}", b.timestamp, b.open, b.high, b.low, b.close, b.volume);
-        }
+        print!("{}{}", csv_header(&extra), csv_rows(&s.id, tf, &bars, &extra, o));
         return Ok(());
     }
     match &id {
@@ -109,6 +106,63 @@ pub async fn chart(s: &Series, g: &Global, o: &Opts) -> Result<()> {
         context::print(s, &bars, o).await?;
     }
     Ok(())
+}
+
+/// Every bar of several series as one CSV table.
+pub async fn csv_many(series: &[Series], o: &Opts) -> Result<()> {
+    let mut out = String::new();
+    for s in series {
+        let tf = Timeframe::parse(&s.interval)?;
+        let line = expr::is_expression(&s.id) || is_line(&ids::parse(&s.id)?);
+        let r = series_range(s, tf, if line { 72 } else { 48 })?;
+        let bars = fetch_range(s, tf, r).await?;
+        let extra = columns(s, tf, r, &bars).await?;
+        if out.is_empty() {
+            out.push_str(&csv_header(&extra));
+        }
+        out.push_str(&csv_rows(&s.id, tf, &bars, &extra, o));
+    }
+    print!("{out}");
+    Ok(())
+}
+
+fn csv_header(extra: &[render::Column]) -> String {
+    let mut h = "id,date,timestamp,open,high,low,close,volume".to_string();
+    for c in extra {
+        h.push(',');
+        h.push_str(&csv_cell(&c.label));
+    }
+    h + "\n"
+}
+
+/// CSV rows; `date` is the trading day for daily and longer bars, else the local time (--tz).
+fn csv_rows(id: &str, tf: Timeframe, bars: &[Bar], extra: &[render::Column], o: &Opts) -> String {
+    let mut out = String::new();
+    for (i, b) in bars.iter().enumerate() {
+        let date = if tf.secs >= 86400 {
+            chrono::DateTime::from_timestamp_millis(b.timestamp).unwrap_or_default().format("%Y-%m-%d").to_string()
+        } else {
+            o.dt(b.timestamp).format("%Y-%m-%dT%H:%M:%S%:z").to_string()
+        };
+        out.push_str(&format!("{},{date},{},{},{},{},{},{}", csv_cell(id), b.timestamp, b.open, b.high, b.low, b.close, b.volume));
+        for c in extra {
+            let v = c.values.get(i).copied().unwrap_or(f64::NAN);
+            out.push(',');
+            if v.is_finite() {
+                out.push_str(&v.to_string());
+            }
+        }
+        out.push('\n');
+    }
+    out
+}
+
+fn csv_cell(s: &str) -> String {
+    if s.contains([',', '"', '\n']) {
+        format!("\"{}\"", s.replace('"', "\"\""))
+    } else {
+        s.to_string()
+    }
 }
 
 async fn candles(id: &ids::InstrumentId, s: &Series, tf: Timeframe, bars: &[Bar], extra: &[render::Column], o: &Opts) -> Result<()> {

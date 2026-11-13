@@ -7,6 +7,14 @@ pub mod series;
 
 use chrono::{DateTime, TimeZone, Utc};
 use chrono_tz::Tz;
+use std::sync::atomic::{AtomicBool, Ordering};
+
+/// Whether tables print as Markdown (`--md`).
+static MARKDOWN: AtomicBool = AtomicBool::new(false);
+
+pub fn set_markdown(on: bool) {
+    MARKDOWN.store(on, Ordering::Relaxed);
+}
 
 #[derive(Clone, Copy)]
 pub struct Opts {
@@ -214,9 +222,13 @@ pub fn lpad(s: &str, w: usize) -> String {
 }
 
 /// Align a table: each row is a list of cells; numeric-looking columns are right-aligned.
+/// With `--md` the first row is the header of a Markdown table.
 pub fn table(rows: &[Vec<String>]) -> String {
     if rows.is_empty() {
         return String::new();
+    }
+    if MARKDOWN.load(Ordering::Relaxed) {
+        return markdown_table(rows);
     }
     let ncol = rows.iter().map(|r| r.len()).max().unwrap_or(0);
     let mut widths = vec![0; ncol];
@@ -245,6 +257,20 @@ pub fn table(rows: &[Vec<String>]) -> String {
         }
         out.push_str(line.trim_end());
         out.push('\n');
+    }
+    out
+}
+
+fn markdown_table(rows: &[Vec<String>]) -> String {
+    let ncol = rows.iter().map(|r| r.len()).max().unwrap_or(0);
+    let line = |r: &[String]| {
+        let cells: Vec<String> = (0..ncol).map(|i| r.get(i).map_or(String::new(), |c| c.replace('|', "\\|"))).collect();
+        format!("| {} |\n", cells.join(" | "))
+    };
+    let mut out = line(&rows[0]);
+    out.push_str(&format!("|{}\n", " --- |".repeat(ncol)));
+    for r in &rows[1..] {
+        out.push_str(&line(r));
     }
     out
 }

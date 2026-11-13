@@ -446,7 +446,7 @@ time                value  BTC +1h     +4h    +24h
 Agents learn a tool by imitating how it was used before, so the interface stays small: one verb
 per job, the same options everywhere, and help and error messages that say what to do next.
 
-- **`show`** Read anything: the briefing, boards, charts, a metric, odds, news, the calendar, your alerts, or a markdown report. `autorekt show liquidity`
+- **`show`** Read anything: the briefing, boards, charts, a metric, odds, news, the calendar, your alerts, or a markdown report. `autorekt show liquidity`. `--csv` gives every bar of each series (`autorekt show SPY QQQ -i 1d -r 1y --csv`), `--md` prints tables as Markdown.
 - **`search`** Find anything: instrument ids across every source, prediction markets, headlines. `autorekt search swap --kind instruments`
 - **`why`** Explain a move: find it, measure what else moved in the same window, pull dated news. With several ids: correlations and broken relationships. `autorekt why BTC`
 - **`watch`** Get woken: rules in plain expressions, backtested before they are trusted, run by a background daemon. `autorekt watch --wait`

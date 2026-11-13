@@ -24,6 +24,7 @@ autorekt show 'RSP / SPY' -i 1d -r 120d  # any expression works where an id does
 autorekt why BTC -r 2d                   # the biggest move, what moved with it, dated news
 autorekt why SPX BTC GOLD US10Y -r 30d   # correlations and which pairs broke
 autorekt search fed december             # find ids, prediction markets and news
+autorekt show SPY TLT -i 1d -r 1y --csv  # every bar of each series, for your own analysis
 ```
 
 3. Answer from the numbers. Quote the values and their times, say which ones are stale or
