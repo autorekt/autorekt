@@ -183,6 +183,8 @@ struct Ctx {
     benches: std::collections::HashMap<String, Vec<Bar>>,
     /// Values a set's list already gives, per item and column label.
     known: std::collections::HashMap<String, std::collections::HashMap<String, f64>>,
+    /// The date of each row's last daily bar, by label.
+    last_bar: std::sync::Mutex<std::collections::HashMap<String, i64>>,
 }
 
 /// One row: the values of every column for `item` ("LABEL|id" or an id), or why it failed.
@@ -225,6 +227,9 @@ async fn row(item: &str, cols: &[Column], ctx: &Ctx) -> (String, Result<Vec<Opti
     } else {
         vec![]
     };
+    if let Some(b) = bars.last() {
+        ctx.last_bar.lock().unwrap().insert(label.clone(), b.timestamp);
+    }
     let (tf, end, span) = (ctx.tf, ctx.end, ctx.span);
     let mut vals = Vec::new();
     for c in cols {
@@ -297,7 +302,7 @@ pub async fn table(items: &[String], name: &str, a: &ShowArgs, g: &Global, o: &O
         let bars = daily(&source, stats_from - 40 * 86_400_000, end).await.with_context(|| format!("benchmark {b}"))?;
         benches.insert(b, bars.into_iter().filter(|x| x.timestamp >= stats_from).collect::<Vec<_>>());
     }
-    let ctx = Ctx { tf, end, span, stats_from, adjust: a.adjust, benches, known };
+    let ctx = Ctx { tf, end, span, stats_from, adjust: a.adjust, benches, known, last_bar: Default::default() };
     let mut rows = futures::future::join_all(items.iter().map(|i| row(i, &cols, &ctx))).await;
     let col_of = |name: &str| cols.iter().position(|c| c.label == name);
     if !filter.is_empty() {
@@ -328,11 +333,12 @@ pub async fn table(items: &[String], name: &str, a: &ShowArgs, g: &Global, o: &O
             v.truncate(shown);
         }
     }
+    let last_bar = ctx.last_bar.lock().unwrap().clone();
     if g.json {
         let v: Vec<_> = rows
             .iter()
             .map(|(label, r)| match r {
-                Ok(vals) => json!({"id": label, "values": cols.iter().zip(vals).map(|(c, v)| (c.label.clone(), json!(v))).collect::<serde_json::Map<_, _>>()}),
+                Ok(vals) => json!({"id": label, "as_of": last_bar.get(label), "values": cols.iter().zip(vals).map(|(c, v)| (c.label.clone(), json!(v))).collect::<serde_json::Map<_, _>>()}),
                 Err(e) => json!({"id": label, "error": format!("{e:#}")}),
             })
             .collect();
@@ -362,14 +368,19 @@ pub async fn table(items: &[String], name: &str, a: &ShowArgs, g: &Global, o: &O
         }
         return Ok(());
     }
-    let mut t = vec![std::iter::once("id".to_string()).chain(cols.iter().map(|c| c.label.clone())).collect::<Vec<_>>()];
+    // Rows whose daily data ends earlier than the newest row's say so, so a change from an older
+    // day is not read as the latest one.
+    let newest = last_bar.values().copied().max();
+    let lagging = last_bar.values().any(|t| Some(*t) != newest);
+    let day = |l: &str| last_bar.get(l).map(|t| chrono::DateTime::from_timestamp_millis(*t).unwrap_or_default().format("%m-%d").to_string()).unwrap_or_default();
+    let mut t = vec![std::iter::once("id".to_string()).chain(cols.iter().map(|c| c.label.clone())).chain(lagging.then(|| "as of".to_string())).collect::<Vec<_>>()];
     let mut missing = String::new();
     for (i, ((label, r), c)) in rows.iter().zip(cells).enumerate() {
         if cut && top > 0 && bottom > 0 && i == top {
             t.push(std::iter::once("...".to_string()).chain(cols.iter().map(|_| String::new())).collect());
         }
         match r {
-            Ok(_) => t.push(std::iter::once(label.clone()).chain(c).collect()),
+            Ok(_) => t.push(std::iter::once(label.clone()).chain(c).chain(lagging.then(|| day(label))).collect()),
             Err(e) => missing.push_str(&format!("missing  {label}: {}\n", format!("{e:#}").lines().next().unwrap_or(""))),
         }
     }
@@ -380,7 +391,8 @@ pub async fn table(items: &[String], name: &str, a: &ShowArgs, g: &Global, o: &O
         (None, None) => o.full_time(now_ms()),
     };
     let source = if crate::sets::is_set(name) { "Eastmoney list: changes in %, flows = net buying by large orders, CNY bn" } else { "from daily closes; changes and distances in %" };
-    println!("table {name}  {scope} {}  ({source}){shown_of}", o.tz_name());
+    let lag_note = if lagging { "  (some rows' daily data ends earlier: see as of)" } else { "" };
+    println!("table {name}  {scope} {}  ({source}){shown_of}{lag_note}", o.tz_name());
     print!("{}{missing}", render::table(&t));
     Ok(())
 }
